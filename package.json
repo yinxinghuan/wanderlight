@@ -11,7 +11,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:security": "TMPDIR=/private/tmp tsx public-tests/protocol-security.ts",
-    "test:choices": "TMPDIR=/private/tmp tsx public-tests/choice-contract.ts"
+    "test:choices": "TMPDIR=/private/tmp tsx public-tests/choice-contract.ts",
+    "test:resume": "TMPDIR=/private/tmp tsx public-tests/reading-anchor.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

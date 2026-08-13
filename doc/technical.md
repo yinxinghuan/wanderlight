@@ -22,6 +22,7 @@ src/
   story/cartridges/wanderlightV1Outcomes.ts  # 三名核心角色的边界判断、同行与自然停止点
   story/engine/                      # 协议、reducer、领域规则、危险、连续性与图片导演
   story/engine/choiceInput.ts        # 正文选择记录编解码与 1/01/2/02 数字输入映射
+  story/engine/readingAnchor.ts      # 续玩时定位最近行动与剧情上下文，避开底部排版缓冲
   story/adapters/                    # demo、Aigram、remote 三种叙事来源
   story/narrativeStyle.ts            # 中英文“清楚但有质感”生成合同
   story/audio/                       # 程序化环境与反馈音
@@ -33,6 +34,7 @@ doc/                                 # 需求、视觉、技术、界面与媒�
 public-tests/
   protocol-security.ts              # 可公开的协议边界与恶意输入回归
   choice-contract.ts                # 正文、行动票和数字输入同源回归
+  reading-anchor.ts                 # 续玩恢复点不落入底部空白的回归
 ```
 
 ## 3. 核心模块
@@ -53,7 +55,7 @@ public-tests/
 
 ### 屏幕适配与交互
 
-界面采用累积阅读流，事件图片留在它所属的回合中。`protocol.ts` 即使同时收到正文项目符号和结构化 `[choices]`，也会提取并删除正文里的重复列表，并让玩家已经看见的尾部行动成为该回合权威选项；模型适配器同时禁止重复输出两套选项。reducer 将最终选项编码为 `choices-<scene>` 阅读块，因此正文 `01 / 02 / 03` 记录和底部行动票始终来自同一数据。`choiceInput.ts` 把输入框中的 `1 / 01 / 2 / 02 / 3 / 03` 映射到当前同号选项，其他内容继续作为自由行动。窄屏通过内部布局适配，不使用整页缩放；底部选择使用 `onClick`，触控目标至少 `44×44px`。入口和平台内主构图不为外部访客栏预留永久空间。
+界面采用累积阅读流，事件图片留在它所属的回合中。`protocol.ts` 即使同时收到正文项目符号和结构化 `[choices]`，也会提取并删除正文里的重复列表，并让玩家已经看见的尾部行动成为该回合权威选项；模型适配器同时禁止重复输出两套选项。reducer 将最终选项编码为 `choices-<scene>` 阅读块，因此正文 `01 / 02 / 03` 记录和底部行动票始终来自同一数据。`choiceInput.ts` 把输入框中的 `1 / 01 / 2 / 02 / 3 / 03` 映射到当前同号选项，其他内容继续作为自由行动。`readingAnchor.ts` 从权威阅读块中寻找最近一轮玩家行动；继续存档和“有新内容”都滚到这个可读锚点，而不是包含 `60dvh` 排版缓冲的物理底部。窄屏通过内部布局适配，不使用整页缩放；底部选择使用 `onClick`，触控目标至少 `44×44px`。入口和平台内主构图不为外部访客栏预留永久空间。
 
 顶部工具由 `Icons.tsx` 的同一套 `24×24 / 1.7px` 线性 SVG 驱动，文字、声音和旅途手册共享等宽分段控件。HUD 使用浅色票券网格，精力、旅费、风闻都带进度轨并保留数值变化动效。旅途手册在普通入口下先展示目标与旅程概况；只有点击某个 HUD 数值时，对应状态卡才置顶。人物与路线页只读取已经登场的角色和已发现地点，并把关系轴转换为玩家可读的共同经历文案。
 
@@ -75,4 +77,4 @@ public-tests/
 - **调整画风或素材**：统一修改 cartridge 中的 `GOUACHE`、`sceneImageDirection` 与 `doc/visual.md`；正式资产只通过 AlterU Media Service 生成。换风格前必须重新做锚点→换地点 edit 连续性评审，不能只换一个风格词。
 - **调整数值与压力**：修改 cartridge 的 `statDefinitions`、`dangerDirector` 和对应 domain rules，并同步 `doc/requirements.md` 的具体数值与恢复合同。
 - **新增后端能力**：Aigram 平台能力扩展 `shared/runtime/bridge.ts`；若未来增加游戏自有 `/api/*`，必须从 `src/game-id.ts` 计算 `API_BASE = '/' + GAME_ID`，禁止写死旧 UUID 或裸请求 `/api/*`。
-- **验收**：公开仓库运行 `npm run test:security`、`npm run test:choices` 与 `npm run build`。正文/行动票对齐、数字输入和恶意协议边界均有可公开机械回归；完整六路浏览器试玩、双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。
+- **验收**：公开仓库运行 `npm run test:security`、`npm run test:choices`、`npm run test:resume` 与 `npm run build`。正文/行动票对齐、数字输入、恢复阅读锚点和恶意协议边界均有可公开机械回归；完整六路浏览器试玩、双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。

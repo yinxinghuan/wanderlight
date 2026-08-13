@@ -8,6 +8,7 @@ import { useStoryEngine } from './useStoryEngine'
 import { usePlayerProfile, type PlayerProfile } from './usePlayerProfile'
 import { useStoryAudio } from './audio/useStoryAudio'
 import { decodeChoiceRecord, resolveNumberedChoiceInput } from './engine/choiceInput'
+import { latestReadingAnchorId } from './engine/readingAnchor'
 
 function useInitialCartridge() {
   return new URLSearchParams(window.location.search).get('cartridge')
@@ -468,21 +469,28 @@ function Game({ cartridge, mode, chatId, onSelect, onLocaleChange }: { cartridge
     setShowResumeLatest(engine.save.scene > 0)
   }, [engine.loaded, engine.save.scene])
 
-  const scrollToLatest = (force = false) => {
-    if (!force && !follow.current) { setHasUnread(true); return }
-    requestAnimationFrame(() => {
-      const node = feedRef.current
-      node?.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
-      setHasUnread(false)
-    })
-  }
-
   const scrollBlockToReadingStart = (element: HTMLElement | null, behavior: ScrollBehavior = 'smooth') => {
     const feed = feedRef.current
     if (!feed || !element) return
     const top = feed.scrollTop + element.getBoundingClientRect().top - feed.getBoundingClientRect().top - 10
+    const previousScrollBehavior = feed.style.scrollBehavior
+    if (behavior === 'auto') feed.style.scrollBehavior = 'auto'
     feed.scrollTo({ top: Math.max(0, top), behavior })
+    if (behavior === 'auto') requestAnimationFrame(() => { feed.style.scrollBehavior = previousScrollBehavior })
     setHasUnread(false)
+  }
+
+  const scrollToLatestReadingContext = (force = false, behavior: ScrollBehavior = 'smooth') => {
+    if (!force && !follow.current) { setHasUnread(true); return }
+    requestAnimationFrame(() => {
+      const feed = feedRef.current
+      if (!feed) return
+      const anchorId = latestReadingAnchorId(engine.save.blocks)
+      const anchor = anchorId
+        ? feed.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(anchorId)}"]`)
+        : feed.querySelector<HTMLElement>('[data-block-id]:last-of-type')
+      scrollBlockToReadingStart(anchor, behavior)
+    })
   }
 
   useEffect(() => {
@@ -580,11 +588,11 @@ function Game({ cartridge, mode, chatId, onSelect, onLocaleChange }: { cartridge
     <ConversationFeed cartridge={cartridge} engine={engine} feedRef={feedRef} endRef={endRef} onScroll={onScroll} player={player} />
     {showResumeLatest && <div className="st-resume-dialog" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="st-resume-title">
       <small>{t(cartridge.locale, confirmResumeRestart ? 'startOver' : 'resumeLatestTitle')}</small><h2 id="st-resume-title">{cartridge.copy.title}</h2><p>{t(cartridge.locale, confirmResumeRestart ? 'startOverWarning' : 'resumeLatestDescription')}</p>
-      {!confirmResumeRestart ? <><button type="button" className="st-resume-dialog__primary" autoFocus onClick={() => { setShowResumeLatest(false); follow.current = true; scrollToLatest(true) }}>{t(cartridge.locale, 'resumeLatestAction')}<Icon name="arrow" /></button>
+      {!confirmResumeRestart ? <><button type="button" className="st-resume-dialog__primary" autoFocus onClick={() => { setShowResumeLatest(false); follow.current = true; scrollToLatestReadingContext(true, 'auto') }}>{t(cartridge.locale, 'resumeLatestAction')}<Icon name="arrow" /></button>
       <button type="button" className="st-resume-dialog__review" onClick={() => setConfirmResumeRestart(true)}>{t(cartridge.locale, 'resumeFromStart')}</button></> : <><button type="button" className="st-resume-dialog__danger" onClick={() => { setShowResumeLatest(false); setConfirmResumeRestart(false); engine.restartWorld() }}>{t(cartridge.locale, 'startOverConfirm')}</button>
       <button type="button" className="st-resume-dialog__review" autoFocus onClick={() => setConfirmResumeRestart(false)}>{t(cartridge.locale, 'startOverCancel')}</button></>}
     </section></div>}
-    {hasUnread && <button className="st-new-content" onClick={() => { follow.current = true; scrollToLatest(true) }}>{t(cartridge.locale, 'newContent')}<Icon name="arrow" /></button>}
+    {hasUnread && <button className="st-new-content" onClick={() => { follow.current = true; scrollToLatestReadingContext(true) }}>{t(cartridge.locale, 'newContent')}<Icon name="arrow" /></button>}
     <Composer cartridge={cartridge} engine={engine} onAct={act} />
     {worldOpen && <WorldDrawer active={worldTab} setActive={setWorldTab} detail={worldDetail} setDetail={setWorldDetail} cartridge={cartridge} engine={engine} close={() => setWorldOpen(false)} player={player} />}
   </main>
