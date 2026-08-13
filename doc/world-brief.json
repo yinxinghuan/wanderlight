@@ -1,0 +1,86 @@
+{
+  "$schema": "./world-brief.schema.json",
+  "game": {
+    "id": "wanderlight",
+    "titleZh": "漫游微光",
+    "titleEn": "Wanderlight",
+    "mode": "open-world",
+    "languages": ["zh", "en"]
+  },
+  "experience": {
+    "playerFantasy": "You arrive on a light-fantasy coast with no assigned destiny, take small jobs, travel by moonline train, and decide which adult strangers become friends, companions, rivals, or something more intimate.",
+    "emotionalPromise": "A relaxed, flirtatious sense of possibility: the world is larger than any romance, but attentive choices can turn an accidental meeting into a remembered relationship.",
+    "commonKnowledgeBoundary": "A readable contemporary-fantasy coast of trains, markets, vineyards, islands, inns, workshops and an adult academy; no lore glossary or specialist knowledge is required.",
+    "openingObjective": "Earn enough coin for a room before the last moonline train leaves Lantern Quay, while deciding whose invitation is worth following."
+  },
+  "world": {
+    "fixedRules": [
+      "Every romanceable or intimate character is an explicitly established adult aged twenty-four or older.",
+      "Characters know only what they witnessed or were told; meetings, promises, boundaries, favors, debts and departures persist by stable character id.",
+      "Every recurring character owns one persistent visual identity record; once anchored, its task id and immutable traits cannot be silently replaced.",
+      "Travel between regions visibly passes through the Moonline carriage or station platform before the destination is committed.",
+      "Relationship changes cite a visible event and never use a hidden affection score as the sole truth."
+    ],
+    "generationRules": [
+      "AI may create local adult NPCs, jobs, rumors, invitations, venues and minor routes consistent with the current region.",
+      "A generated NPC remains transient until a visible debut creates a stable character id and a visual identity anchor request.",
+      "Every turn changes location, knowledge, money, energy, reputation, an inventory fact, or a sourced relationship event.",
+      "Flirtation grows from attention, compatibility, consent and shared activity; never force intimacy, coercion, explicit sex or a single mandatory partner.",
+      "Failure produces fatigue, missed transport, lost coin, awkwardness, damaged trust or a changed route rather than deleting the save."
+    ],
+    "regions": [
+      { "id": "lantern-quay", "work": "route sorting and dock hauling", "social": "ferry canteen and hiring square", "rest": "upstairs inn" },
+      { "id": "moonline-carriage", "work": "route information and steward errands", "social": "shared night carriage", "rest": "window-seat rest while time advances" },
+      { "id": "cupshadow-market", "work": "hauling and stage setup", "social": "performances and shared supper table", "rest": "return to Lantern Quay inn after closing" },
+      { "id": "silverleaf-vineyard", "work": "trellis repair and field surveys", "social": "field-house supper and tasting", "rest": "field-house guest room" },
+      { "id": "mistpine-forest", "work": "mushroom surveys and forest-lamp maintenance", "social": "ranger tea shelter", "rest": "lamp house or Moonline stop" },
+      { "id": "tidal-islands", "work": "net mending and landing work", "social": "dawn performances and public stove", "rest": "bridgehead guesthouse" },
+      { "id": "far-lantern-institute", "work": "workshop repair and recording jobs", "social": "open lectures and shared workbenches", "rest": "adult guest rooms" }
+    ],
+    "maxActiveThreads": 3
+  },
+  "stats": [
+    { "id": "energy", "labelZh": "精力", "labelEn": "Energy", "min": 0, "max": 100, "initial": 72, "display": "bar", "dangerDirection": "low", "warningAt": 28, "dangerAt": 8, "maxDelta": 24 },
+    { "id": "coin", "labelZh": "旅费", "labelEn": "Coin", "min": 0, "max": 120, "initial": 18, "display": "number", "dangerDirection": "low", "warningAt": 8, "dangerAt": 0, "maxDelta": 30 },
+    { "id": "renown", "labelZh": "风闻", "labelEn": "Standing", "min": -40, "max": 100, "initial": 4, "display": "bar", "dangerDirection": "low", "warningAt": -10, "dangerAt": -30, "maxDelta": 18 }
+  ],
+  "choiceIntents": ["follow a person or deepen a relationship", "explore a place or accept local work", "protect time, energy, money, or personal boundaries"],
+  "signatureItem": {
+    "nameZh": "月线通行册",
+    "nameEn": "Moonline Passbook",
+    "ability": "Carries three conductor stamps that can secure an otherwise unavailable late-night route or cabin.",
+    "limitOrCost": "Each override permanently consumes one stamp, and the pass cannot create a route the player has never discovered.",
+    "provenance": "Issued at Lantern Quay after the player accepts temporary work for the Moonline station."
+  },
+  "danger": {
+    "minSafeTurns": 3,
+    "maxSafeTurns": 5,
+    "cooldownTurns": 3,
+    "physicalCombat": "none",
+    "methods": ["read the warning and ask for context", "protect a person or commitment at a personal cost", "withdraw, reroute, or set a clear boundary"],
+    "threatPalette": [
+      "the last moonline service is cancelled while the player is far from their room",
+      "a private invitation is repeated publicly and creates an unwanted rumor",
+      "sudden silver rain closes the vineyard road and separates companions",
+      "a night-market employer withholds payment after changing the agreed terms",
+      "two commitments overlap and one character feels deliberately ignored"
+    ],
+    "fallbackStatId": "energy",
+    "fallbackAmount": 12
+  },
+  "visuals": {
+    "material": "wayfarer",
+    "artDirection": "editorial gouache light-fantasy travel romance, opaque matte brush shapes, dry-brush edges, twilight mineral colors, grounded adult faces, restrained sensual tension through distance and gesture",
+    "entryScene": "Lantern Quay at blue hour, a moonline train waiting behind rain-bright paving, market awnings and three readable adult silhouettes in separate depth planes, no readable text",
+    "sceneImageDirection": "editorial gouache painting, opaque matte brush shapes, simplified but observant adult features, one stable identity owner and one dominant visible action, deep indigo, mineral teal, sage and warm copper, no glossy 3D, no photorealism, no UI or readable text",
+    "itemImageDirection": "editorial gouache travel-object study on worn indigo cloth and pale station stone, opaque matte brush shapes, object only, no people, no readable text"
+  },
+  "audio": {
+    "mood": "slow train rhythm, brushed percussion, warm electric piano, station rain and airy glass harmonics",
+    "bpm": 68
+  },
+  "ending": {
+    "type": "chapter-boundary",
+    "failureConsequences": ["fatigue", "missed transport", "lost coin", "awkwardness", "damaged trust", "changed route"]
+  }
+}
