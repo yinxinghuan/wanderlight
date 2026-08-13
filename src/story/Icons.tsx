@@ -3,10 +3,10 @@ import type { SVGProps } from 'react'
 export type IconName = 'people' | 'map' | 'bag' | 'book' | 'folio' | 'text' | 'close' | 'back' | 'pen' | 'arrow' | 'image' | 'refresh' | 'volume' | 'volumeOff'
 
 const paths: Record<IconName, React.ReactNode> = {
-  people: <><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3.5 20c.6-4 2.5-6 5.5-6s4.9 2 5.5 6M14 15c2.9-.6 5.2.9 6 4"/></>,
-  map: <><path d="m3 6 5-2 8 3 5-2v14l-5 2-8-3-5 2Z"/><path d="M8 4v14M16 7v14"/></>,
-  bag: <><path d="M5 8h14l1 13H4Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></>,
-  book: <><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H11v17H7.5A3.5 3.5 0 0 0 4 22Z"/><path d="M20 5.5A3.5 3.5 0 0 0 16.5 2H13v17h3.5A3.5 3.5 0 0 1 20 22Z"/></>,
+  people: <><circle cx="8" cy="8" r="2.75"/><circle cx="16" cy="8" r="2.75"/><path d="M3.5 19.5c.45-3.7 2-5.55 4.5-5.55s4.05 1.85 4.5 5.55M11.5 19.5c.45-3.7 2-5.55 4.5-5.55s4.05 1.85 4.5 5.55"/><path d="M10.3 11.2h3.4"/></>,
+  map: <><path d="M4 5.5 9 3l6 2.5L20 3v15.5L15 21l-6-2.5L4 21Z"/><path d="M9 3v15.5M15 5.5V21"/><circle cx="7" cy="8.5" r="1"/><circle cx="17.5" cy="15" r="1"/><path d="M8 9.2c2.2.6 2.7 3.5 5 4.1 1 .3 2.1.2 3.5 1"/></>,
+  bag: <><path d="M5 8.5h14l1 11.5H4Z"/><path d="M8.5 8.5V6.8A3.2 3.2 0 0 1 11.7 3.5h.6a3.2 3.2 0 0 1 3.2 3.3v1.7"/><path d="M4.5 12h15M9.5 12v2.8h5V12"/></>,
+  book: <><path d="M6 3.5h11.5A1.5 1.5 0 0 1 19 5v15.5H7A2.5 2.5 0 0 1 4.5 18V5A1.5 1.5 0 0 1 6 3.5Z"/><path d="M4.5 18A2.5 2.5 0 0 1 7 15.5h12M8 3.5v12M11 8h5M11 11h4"/></>,
   folio: <><path d="M5 3.5h12.5A1.5 1.5 0 0 1 19 5v15.5H6.5A2.5 2.5 0 0 1 4 18V5a1.5 1.5 0 0 1 1-1.5Z"/><path d="M4 18a2.5 2.5 0 0 1 2.5-2.5H19M8 7.5h7M8 10.5h4"/><circle cx="15.8" cy="10.8" r="1.5"/></>,
   text: <><path d="M4 6h9M8.5 6v12M5.5 18h6"/><path d="M15 10h5M17.5 10v8M15.5 18h4"/></>,
   close: <path d="m6 6 12 12M18 6 6 18"/>,

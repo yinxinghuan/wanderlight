@@ -3,7 +3,7 @@ import type { EntityMetric, Locale, ParsedCommand, ParsedScene, SceneImageSubjec
 
 const commandNames = new Set([
   'choices', 'situation', 'widget', 'skill_check', 'state', 'clock', 'map_update', 'inventory',
-  'reputation', 'character_update', 'party_change', 'encounter', 'session_end',
+  'job', 'scene_location', 'image_location', 'dialogue_focus', 'reputation', 'character_update', 'party_change', 'encounter', 'session_end',
 ])
 
 function uid(prefix: string, index: number, text: string): string {
@@ -87,9 +87,23 @@ function extractNaturalChoices(source: string): { prose: string; choices: string
     choiceIndexes.unshift(cursor)
     cursor -= 1
   }
+  if (choices.length < 2) {
+    choices.length = 0
+    choiceIndexes.length = 0
+    const cue = /^(?:你准备|准备采取的行动|可选行动|your actions?|you prepare|options?)\s*[：:]\s*$/i
+    const cueIndex = [...nonEmptyIndexes].reverse().find((index) => cue.test(lines[index].trim()))
+    const tailIndexes = cueIndex == null ? [] : nonEmptyIndexes.filter((index) => index > cueIndex)
+    const beginsLikeBareAction = /^(?:跟随|观察|询问|陪同|开始|继续|前往|返回|留下|等待|检查|调查|搜索|告诉|帮助|拒绝|接受|进入|使用|带|把|让|与|尝试|绕|登|走|停|休息|follow|observe|ask|accompany|begin|start|continue|go|return|stay|wait|inspect|investigate|search|tell|help|refuse|accept|enter|use|take|try|walk|leave)/i
+    if (cueIndex != null && tailIndexes.length >= 2 && tailIndexes.length <= 5 && tailIndexes.every((index) => {
+      const value = lines[index].trim()
+      return value.length >= 2 && value.length <= 96 && beginsLikeBareAction.test(value)
+    })) {
+      tailIndexes.forEach((index) => { choices.push(lines[index].trim()); choiceIndexes.push(index) })
+    }
+  }
   if (choices.length < 2 || choices.length > 5 || new Set(choices).size !== choices.length) return { prose: source, choices: [] }
   const previous = lines.slice(0, choiceIndexes[0]).reverse().find((line) => line.trim())?.trim() ?? ''
-  const hasChoiceCue = /(?:你(?:现在)?可以|可选择|选项|下一步|接下来|决定|打算|choose|choice|options?|next|you can|what (?:will|do) you)/i.test(previous)
+  const hasChoiceCue = /(?:你(?:现在)?可以|你准备|准备采取的行动|可选行动|可选择|选项|下一步|接下来|决定|打算|choose|choice|options?|next|you can|what (?:will|do) you)/i.test(previous)
   const beginsLikeAction = /^(?:先|去|前往|沿|循|跟随|返回|留下|等待|观察|检查|调查|搜索|询问|告诉|帮助|拒绝|接受|进入|使用|带|把|让|与|继续|尝试|绕|登|走|停|休息|follow|ask|return|stay|wait|watch|inspect|investigate|search|tell|help|refuse|accept|enter|use|take|continue|try|climb|walk|go|leave)/i
   if (!hasChoiceCue && (choices.length !== 3 || !choices.every((choice) => beginsLikeAction.test(choice)))) return { prose: source, choices: [] }
   choiceIndexes.forEach((index) => { lines[index] = '' })
@@ -98,7 +112,7 @@ function extractNaturalChoices(source: string): { prose: string; choices: string
   // remains the only place where the player is asked to choose.
   if (hasChoiceCue) {
     const cueIndex = lines.slice(0, choiceIndexes[0]).map((line) => line.trim()).lastIndexOf(previous)
-    if (cueIndex >= 0 && /^(?:你(?:现在)?可以|可选择|选项|下一步|接下来|choose|choices?|options?|next|you can|what (?:will|do) you)[^。.!?！？]{0,32}[：:]?$/i.test(previous)) lines[cueIndex] = ''
+    if (cueIndex >= 0 && /^(?:你(?:现在)?可以|你准备|准备采取的行动|可选行动|可选择|选项|下一步|接下来|choose|choices?|options?|next|you can|what (?:will|do) you)[^。.!?！？]{0,32}[：:]?$/i.test(previous)) lines[cueIndex] = ''
   }
   return { prose: lines.join('\n'), choices }
 }
@@ -164,6 +178,28 @@ function parseCommand(name: string, source: string, locale: Locale): ParsedComma
         count: Math.max(1, Math.min(99, Math.floor(number(data.count, 1)))), rarity, detail: boundedText(data.detail, 300), effect: boundedText(data.effect, 240),
         lore: boundedText(data.lore, 600), metrics: parseMetrics(data.metrics), imagePrompt: boundedText(data.image_prompt, 1200),
       } : null
+    }
+    case 'job': {
+      const action = data.action === 'accept' || data.action === 'settle' || data.action === 'cancel' ? data.action : 'offer'
+      const id = stableCharacterId(data.id)
+      if (!id) return null
+      return {
+        type: 'job', action, id,
+        label: boundedText(data.label, 120), employer: boundedText(data.employer, 80),
+        wage: data.wage == null ? undefined : Math.max(1, Math.min(30, Math.floor(number(data.wage)))),
+      }
+    }
+    case 'scene_location': {
+      const location = boundedText(data.location ?? data.value ?? source.replace(/^\s*scene_location\s*:/i, ''), 80)
+      return location ? { type: 'scene_location', location } : null
+    }
+    case 'image_location': {
+      const location = boundedText(data.location ?? data.value ?? source.replace(/^\s*image_location\s*:/i, ''), 80)
+      return location ? { type: 'image_location', location } : null
+    }
+    case 'dialogue_focus': {
+      const speaker = boundedText(data.speaker ?? data.character, 80)
+      return speaker ? { type: 'dialogue_focus', speaker, expression: boundedText(data.expression, 160) } : null
     }
     case 'reputation': return data.npc ? { type: 'reputation', npc: data.npc, action: data.action ?? 'changed' } : null
     case 'character_update': return data.character ? {

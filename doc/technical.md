@@ -21,6 +21,8 @@ src/
   story/cartridges/wanderlightV1Content.ts   # 罗温/塞莱斯特的首次登场、工作、中转与重逢
   story/cartridges/wanderlightV1Outcomes.ts  # 三名核心角色的边界判断、同行与自然停止点
   story/engine/                      # 协议、reducer、领域规则、危险、连续性与图片导演
+    paymentConsistency.ts            # 工作合同、付款正文/命令一致性门禁与已知旧档修复
+    turnConsistency.ts               # 场景、目标、选项、配图原子一致性门禁与已知场景旧档修复
   story/engine/choiceInput.ts        # 正文选择记录编解码与 1/01/2/02 数字输入映射
   story/engine/readingAnchor.ts      # 续玩时定位最近行动与剧情上下文，避开底部排版缓冲
   story/adapters/                    # demo、Aigram、remote 三种叙事来源
@@ -42,7 +44,11 @@ public-tests/
 
 ### 状态、协议与回合
 
-`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作、调用适配器、解析结构化命令，并把结果一次性交给 `engine/reducer.ts`。人物、地点、关系、物品、数值、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`engine/domainRules.ts` 权威结算短工、餐食、住宿、车厢休息和六条普通车票路线，并用 `clock-add` 保持跨日时间；`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
+`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作、调用适配器、解析结构化命令，并把结果一次性交给 `engine/reducer.ts`。人物、地点、关系、物品、数值、工作合同、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`engine/domainRules.ts` 权威结算短工、餐食、住宿、车厢休息和六条普通车票路线，并用 `clock-add` 保持跨日时间；`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
+
+动态有偿工作使用 `[job]` 协议：`offer` 固化稳定工作 ID、雇主、工作内容和明确工资，`settle` 只能结算未完成合同，并由 reducer 直接按记录工资增加钱币和 `jobs_completed`；同回合额外的 coin widget 会被拒绝且 reducer 也做去重防御。`paymentConsistency.ts` 在任何生成正文写入存档前机械核对报价、付款、消费和合同金额；首次失败会要求当前适配器完整重写同一回合，第二次仍失败则不提交。已知的“种荚冷藏后只写几枚铜板、钱币仍为 6”旧档只在精确命中该坏状态时补原定 `8` 枚一次，并用迁移事实防止重复。
+
+每个非 demo 生成回合还必须输出唯一 `[scene_location]`；正文抵达新地点必须同回合输出 `[map_update]`，建立新任务必须输出 `[state]`，场景图必须用 `[image_location]` 声明与当前场景相同的地点。`turnConsistency.ts` 在提交前联合检查有效地点、任务、最终选项和图片提示；旧地点选项、旧地点图片或缺失状态会触发一次完整重写，重写仍不一致则整回合不落盘。对已经出现“雾杉林巡逻正文、灯湾码头按钮和旧图”的旧存档，只在精确命中该组正文与旧选项时迁移到雾杉林、恢复三个巡逻行动并排队重生成该回合图片，迁移事实确保只执行一次。
 
 七个地图节点分别保存本地工作、社交和休息事实；这些事实进入 Aigram 世界上下文，防止自由生成把所有地点写成同一套活动。危险导演为新存档保留六个完整场景的首轮宽限，且作者/住宿 `session_end` 检查点不再叠加随机危机，避免自然落点被无关判定卡打断。
 
@@ -54,9 +60,11 @@ public-tests/
 
 人物详情公开显示 `queued / generating / anchored / failed / unanchored` 的视觉身份状态。锚点失败不阻塞文字叙事，但在成功重试前不会继续生成该角色的无参考清晰面孔。领域规则触发的旅行会被 reducer 合成为图片导演可读的 `map_update`，因此即使没有模型图片提示，也会为首次抵达安排地点空镜；地点的工作、社交与休息事实会进入构图提示，且开场行李、种荚和雨街残留由图片导演拒绝。
 
-`imageDirector.ts` 的兜底节奏为连续 `2` 个有效回合没有新图即补图；地点变化、关系转折和已固化重要人物的情绪对白可立即触发。对白镜头从稳定人物 ID 取得锚点，使用中近景反应镜头并保留当前地点背景。`engine/itemImage.ts` 独立构造行囊图鉴 prompt；`ITEM_IMAGE_STYLE_VERSION=3` 会让旧写实缓存失效并在再次打开行囊时重新排队。内部媒体 QA 已验证编辑水粉、无文字与准确三枚印章；公开文档不记录过程任务 ID。
+`imageDirector.ts` 的兜底节奏为连续 `2` 个有效回合没有新图即补图；地点变化、关系转折和任何说话者的重要对白可立即触发。重要性根据对白是否揭示关键事实、改变关系、设定边界、作出承诺/请求、警告危险、建立任务或形成明显情绪转折判定；适配器还可用 `[dialogue_focus]` 明确说话者与可见表情。对白镜头不依赖有限情绪词，也不受普通配图节流限制，并优先于模型提出的普通环境图。已有 `visualIdentity` 的说话者从稳定人物 ID 取得锚点；动态未锚定人物不会借用其他身份，但仍使用中近景反应镜头并保留当前地点背景。`engine/itemImage.ts` 独立构造行囊图鉴 prompt；`ITEM_IMAGE_STYLE_VERSION=3` 会让旧写实缓存失效并在再次打开行囊时重新排队。内部媒体 QA 已验证编辑水粉、无文字与准确三枚印章；公开文档不记录过程任务 ID。
 
 ### 屏幕适配与交互
+
+顶部手册入口使用与一级 UI 一致的人物关系线性图标和可见“关系”标签，默认直达 `party` 数据页；抽屉内四个栏目图标统一为 `24×24`、`1.7px` 圆角描边，并分别用人物连接、折叠节点路线、带扣旅行包和装订手册表达。人物关系页在列表前渲染关系总览，并把玩家自身状态移至列表末尾，避免遮挡关系内容。人物行从 `StorySave.relationships` 聚合关系印象和共同经历数，人物详情首屏使用高对比关系摘要，完整事件仍读取同一权威数组，不维护第二份关系状态。
 
 界面采用累积阅读流，事件图片留在它所属的回合中。`protocol.ts` 即使同时收到正文项目符号和结构化 `[choices]`，也会提取并删除正文里的重复列表，并让玩家已经看见的尾部行动成为该回合权威选项；模型适配器同时禁止重复输出两套选项。reducer 将最终选项编码为 `choices-<scene>` 阅读块，因此正文 `01 / 02 / 03` 记录和底部行动票始终来自同一数据。`choiceInput.ts` 把输入框中的 `1 / 01 / 2 / 02 / 3 / 03` 映射到当前同号选项，其他内容继续作为自由行动。`readingAnchor.ts` 从权威阅读块中寻找最近一轮玩家行动；继续存档和“有新内容”都滚到这个可读锚点，而不是包含 `60dvh` 排版缓冲的物理底部。窄屏通过内部布局适配，不使用整页缩放；底部选择使用 `onClick`，触控目标至少 `44×44px`。入口和平台内主构图不为外部访客栏预留永久空间。
 
@@ -82,4 +90,4 @@ public-tests/
 - **调整画风或素材**：统一修改 cartridge 中的 `GOUACHE`、`sceneImageDirection` 与 `doc/visual.md`；正式资产只通过 AlterU Media Service 生成。换风格前必须重新做锚点→换地点 edit 连续性评审，不能只换一个风格词。
 - **调整数值与压力**：修改 cartridge 的 `statDefinitions`、`dangerDirector` 和对应 domain rules，并同步 `doc/requirements.md` 的具体数值与恢复合同。
 - **新增后端能力**：Aigram 平台能力扩展 `shared/runtime/bridge.ts`；若未来增加游戏自有 `/api/*`，必须从 `src/game-id.ts` 计算 `API_BASE = '/' + GAME_ID`，禁止写死旧 UUID 或裸请求 `/api/*`。
-- **验收**：公开仓库运行 `npm run test:security`、`npm run test:choices`、`npm run test:resume`、`npm run test:audio` 与 `npm run build`。正文/行动票对齐、数字输入、恢复阅读锚点、程序化音频和恶意协议边界均有可公开机械回归；完整六路浏览器试玩、双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。
+- **验收**：公开仓库运行 `npm run test:image-director`、`npm run test:turn`、`npm run test:payment`、`npm run test:security`、`npm run test:choices`、`npm run test:resume`、`npm run test:audio` 与 `npm run build`。任何说话者的重要对白强制表情镜头、已锚定人物身份绑定、动态人物不借错身份、环境图覆盖防护、短事务对白不过度出图、场景/目标/选项/配图原子对齐、截图旧档单次修复、报价不入账、合同原子结算、截图模糊付款拦截、消费扣款、重复结算防护、正文/行动票对齐、数字输入、恢复阅读锚点、程序化音频和恶意协议边界均有可公开机械回归；完整六路浏览器试玩、双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。

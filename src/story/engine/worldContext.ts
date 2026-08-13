@@ -61,6 +61,7 @@ export function buildWorldContext(context: AdapterContext) {
       knownCharacters: [...activeParty, ...recentKnown].map(characterSnapshot),
       map: save.map,
       inventory: save.inventory,
+      jobs: save.jobs.slice(-20),
       facts: save.facts,
       relationships: save.relationships.slice(-30),
       danger: save.danger,

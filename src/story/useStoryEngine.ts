@@ -8,6 +8,8 @@ import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
 import { applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { parseStoryProtocol } from './engine/protocol'
+import { repairKnownPaymentGap, validatePaymentConsistency } from './engine/paymentConsistency'
+import { repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
 import { domainOwnsDanger, resolveDomainAction, syncDomainDerivedState } from './engine/domainRules'
@@ -15,13 +17,14 @@ import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
 import { inventoryImagePrompt } from './engine/itemImage'
 
-type LegacyStorySave = Omit<StorySave, 'version' | 'locale' | 'characters' | 'partyMemberIds' | 'danger' | 'decisionContext'> & {
-  version?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+type LegacyStorySave = Omit<StorySave, 'version' | 'locale' | 'characters' | 'partyMemberIds' | 'danger' | 'decisionContext' | 'jobs'> & {
+  version?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
   decisionContext?: string
   locale?: Locale
   characters?: StorySave['characters']
   partyMemberIds?: StorySave['partyMemberIds']
   danger?: Partial<StorySave['danger']>
+  jobs?: StorySave['jobs']
   imageUrl?: string
   imageStatus?: 'idle' | 'queued' | 'generating' | 'ready' | 'failed'
   imagePrompt?: string
@@ -84,7 +87,10 @@ function recoverPersistedChoices(candidate: LegacyStorySave, cartridge: StoryCar
 function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge: StoryCartridge, incomingChatId?: string): StorySave {
   if (!candidate || candidate.cartridgeId !== cartridge.id || !Array.isArray(candidate.blocks)) return createInitialSave(cartridge, incomingChatId)
   if (incomingChatId && candidate.remoteChatId && candidate.remoteChatId !== incomingChatId) return createInitialSave(cartridge, incomingChatId)
-  const repaired = recoverPersistedChoices(repairMockLoop(candidate, cartridge), cartridge)
+  const repaired = repairKnownForestSceneDivergence(
+    repairKnownPaymentGap(recoverPersistedChoices(repairMockLoop(candidate, cartridge), cartridge), cartridge),
+    cartridge,
+  )
   let blocks = repaired.blocks
   if (!blocks.some((block) => block.kind === 'image')) {
     const legacyPrompt = repaired.imagePrompt?.trim() ?? ''
@@ -120,10 +126,11 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
   })
   const characterState = normalizeCharacterState(repaired, cartridge)
   const normalized = {
-    ...repaired, ...characterState, version: 9, locale: repaired.locale ?? cartridge.locale,
-    decisionContext: repaired.version === 9 ? repaired.decisionContext ?? '' : '',
+    ...repaired, ...characterState, version: 10, locale: repaired.locale ?? cartridge.locale,
+    decisionContext: repaired.version === 9 || repaired.version === 10 ? repaired.decisionContext ?? '' : '',
     remoteChatId: incomingChatId || repaired.remoteChatId, blocks, inventory, map,
-    danger: normalizeDangerState(repaired.danger), facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
+    danger: normalizeDangerState(repaired.danger), jobs: (repaired.jobs ?? []).map((job) => ({ ...job })),
+    facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
   } as StorySave
   if (!normalized.sessionEnded && normalized.choices.length < 2) normalized.choices = createRecoveryChoices(normalized, cartridge)
   if (!normalized.sessionEnded && normalized.choices.length && !normalized.blocks.some((block) => block.id === `choices-${normalized.scene}`)) {
@@ -285,10 +292,27 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
       const base = localizeKnownState(saveRef.current, cartridge, activeCartridge)
       const domainResolution = resolveDomainAction(base, activeCartridge, normalizedAction)
       const dangerDirective = domainResolution?.status === 'rejected' || domainOwnsDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
-      const result = domainResolution
+      let result = domainResolution
         ? { content: domainResolution.status === 'accepted' ? domainResolution.successText : domainResolution.reasons.join(activeCartridge.locale === 'zh' ? '；' : '; ') }
         : await adapter.send(normalizedAction, { cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective }, setProgress)
-      const parsed = parseStoryProtocol(result.content, actionLocale)
+      let parsed = parseStoryProtocol(result.content, actionLocale)
+      if (!domainResolution) {
+        const turnViolations = mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)
+        const violations = [...validatePaymentConsistency(base, parsed, activeCartridge), ...turnViolations]
+        if (violations.length) {
+          setProgress({ label: t(actionLocale, 'checkingState'), percent: 82 })
+          result = await adapter.send(normalizedAction, {
+            cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective,
+            repair: { draft: result.content, violations },
+          }, setProgress)
+          parsed = parseStoryProtocol(result.content, actionLocale)
+          const remaining = [
+            ...validatePaymentConsistency(base, parsed, activeCartridge),
+            ...(mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)),
+          ]
+          if (remaining.length) throw new Error(actionLocale === 'zh' ? '这次回应的地点、选择、图片或状态未通过一致性检查，未写入存档。请重试。' : 'This response failed the turn consistency check and was not saved. Please retry.')
+        }
+      }
       commit((current) => applyParsedScene(localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction, result.imagePrompt, result.imageSubject, dangerDirective, domainResolution, result.imageCharacterId))
       setPendingAction('')
       setProgress(null)

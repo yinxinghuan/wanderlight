@@ -151,6 +151,16 @@ export type DomainDerivedFact =
 export interface StoryDomainRules { rules: DomainActionRule[]; derivedItemMetrics?: DomainDerivedItemMetric[]; derivedFacts?: DomainDerivedFact[] }
 export interface DomainActionResolution { status: 'accepted' | 'rejected'; ruleId: string; intent: string; effects: DomainEffect[]; reasons: string[]; successText: string; successChoices: [string, string, string] }
 
+export interface JobContract {
+  id: string
+  label: string
+  employer?: string
+  wage: number
+  status: 'offered' | 'accepted' | 'settled' | 'cancelled'
+  offeredAtScene: number
+  settledAtScene?: number
+}
+
 export interface DangerCheck {
   skill: string
   dc: number
@@ -220,7 +230,7 @@ export interface StoryCartridge {
 export interface DemoTurn { match: string[]; content: string; imagePrompt?: string; imageSubject?: SceneImageSubject; imageCharacterId?: string }
 
 export interface StorySave {
-  version: 9
+  version: 10
   cartridgeId: CartridgeId
   locale: Locale
   remoteChatId?: string
@@ -239,6 +249,7 @@ export interface StorySave {
   characters: StoryCharacter[]
   partyMemberIds: string[]
   relationships: RelationshipEvent[]
+  jobs: JobContract[]
   danger: StoryDangerState
   sessionEnded: boolean
   lastActionId?: string
@@ -260,6 +271,10 @@ export type ParsedCommand =
   | { type: 'clock'; value: string }
   | { type: 'map_update'; location: string; connectedTo?: string; detail?: string; lore?: string; facts?: string[] }
   | { type: 'inventory'; action: 'add' | 'remove'; item: string; count: number; rarity?: 'common' | 'rare' | 'legendary'; detail?: string; effect?: string; lore?: string; metrics?: EntityMetric[]; imagePrompt?: string }
+  | { type: 'job'; action: 'offer' | 'accept' | 'settle' | 'cancel'; id: string; label?: string; employer?: string; wage?: number }
+  | { type: 'scene_location'; location: string }
+  | { type: 'image_location'; location: string }
+  | { type: 'dialogue_focus'; speaker: string; expression?: string }
   | { type: 'reputation'; npc: string; action: string }
   | { type: 'character_update'; characterId?: string; character: string; role?: string; detail?: string; lore?: string; vitality?: number; stress?: number; skills?: SkillDefinition[]; visualAppearance?: string; visualTraits?: string[]; visualWardrobe?: string[]; visualForbidden?: string[] }
   | { type: 'party_change'; characterId?: string; character: string; change: 'add' | 'remove'; role?: string; detail?: string; lore?: string; vitality?: number; stress?: number; skills?: SkillDefinition[] }
@@ -275,6 +290,7 @@ export interface AdapterContext {
   locale: Locale
   dangerDirective?: DangerDirective
   domainResolution?: DomainActionResolution
+  repair?: { draft: string; violations: string[] }
 }
 
 export interface AdapterProgress {

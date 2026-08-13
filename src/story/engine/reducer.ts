@@ -13,7 +13,7 @@ function clamp(value: number, min: number, max: number): number {
 export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: string): StorySave {
   const initialPartyMemberIds = cartridge.initialPartyMemberIds ?? cartridge.characters.filter((character) => character.initialStatus === 'companion').map((character) => character.id)
   const initial: StorySave = {
-    version: 9, cartridgeId: cartridge.id, locale: cartridge.locale, remoteChatId, entered: false, scene: 0,
+    version: 10, cartridgeId: cartridge.id, locale: cartridge.locale, remoteChatId, entered: false, scene: 0,
     location: cartridge.opening.location, time: cartridge.opening.time, objective: cartridge.opening.objective,
     decisionContext: '',
     stats: Object.fromEntries(cartridge.statDefinitions.map((stat) => [stat.id, stat.initial])),
@@ -27,7 +27,7 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
       return state
     }),
     partyMemberIds: initialPartyMemberIds,
-    relationships: [],
+    relationships: [], jobs: [],
     danger: createInitialDangerState(),
     sessionEnded: false,
   }
@@ -363,7 +363,7 @@ export function applyParsedScene(
   const next: StorySave = {
     ...save, locale: cartridge.locale, scene: save.scene + 1,
     blocks: [...save.blocks, { id: `action-${save.scene + 1}`, kind: 'event', text: actionId }, ...(transition ? [transition] : []), ...parsed.blocks],
-    choices: [], relationships: [...save.relationships],
+    choices: [], relationships: [...save.relationships], jobs: save.jobs.map((job) => ({ ...job })),
     map: save.map.map((node) => ({ ...node })), inventory: save.inventory.map((item) => ({ ...item })),
     characters: save.characters.map((character) => ({ ...character, skills: character.skills.map((skill) => ({ ...skill })), visualIdentity: character.visualIdentity ? cloneVisualIdentity(character.visualIdentity) : undefined })),
     partyMemberIds: [...save.partyMemberIds],
@@ -381,6 +381,7 @@ export function applyParsedScene(
 
   const commands = [...parsed.commands, ...inferInventoryCommands(parsed, cartridge)]
     .filter((command) => domainAllowsModelCommand(command, domainResolution))
+  const hasJobSettlement = commands.some((command) => command.type === 'job' && command.action === 'settle')
   commands.forEach((command, index) => {
     const effectId = `effect-${next.scene}-${index}`
     if (command.type === 'choices') {
@@ -393,6 +394,7 @@ export function applyParsedScene(
     if (command.type === 'widget') {
       const definition = cartridge.statDefinitions.find((stat) => stat.id === command.id)
       if (!definition) return
+      if (command.id === 'coin' && command.operation === 'add' && hasJobSettlement) return
       const current = next.stats[command.id] ?? definition.initial
       const raw = Number(command.value)
       const requested = command.operation === 'add' ? current + raw : command.operation === 'remove' ? current - raw : raw
@@ -455,6 +457,29 @@ export function applyParsedScene(
       }
       next.inventory = next.inventory.filter((item) => item.count > 0)
       if (changed) effects.push(changeBlock(effectId, `${command.action === 'add' ? t(cartridge.locale, 'gained') : t(cartridge.locale, 'lost')} ${command.item} ×${command.count}`, { itemAction: command.action, ...(command.rarity ? { rarity: command.rarity } : {}) }))
+    }
+    if (command.type === 'job') {
+      const existing = next.jobs.find((job) => job.id === command.id)
+      if (command.action === 'offer') {
+        if (!command.wage || !command.label || existing) return
+        next.jobs.push({ id: command.id, label: command.label, employer: command.employer, wage: command.wage, status: 'offered', offeredAtScene: next.scene })
+      }
+      if (command.action === 'accept' && existing && existing.status === 'offered') existing.status = 'accepted'
+      if (command.action === 'cancel' && existing && existing.status !== 'settled') existing.status = 'cancelled'
+      const payable = command.action === 'settle' ? next.jobs.find((job) => job.id === command.id) : undefined
+      if (payable && (payable.status === 'offered' || payable.status === 'accepted')) {
+        const definition = cartridge.statDefinitions.find((stat) => stat.id === 'coin')
+        if (!definition) return
+        const before = next.stats.coin ?? definition.initial
+        const wage = Math.min(payable.wage, definition.maxDelta ?? payable.wage)
+        next.stats.coin = clamp(before + wage, definition.min, definition.max)
+        const delta = next.stats.coin - before
+        payable.status = 'settled'
+        payable.settledAtScene = next.scene
+        next.facts.jobs_completed = Number(next.facts.jobs_completed ?? 0) + 1
+        if (delta) effects.push(changeBlock(effectId, `${definition.label} +${delta}`, { stat: 'coin', delta, jobId: payable.id }))
+      }
+      next.jobs = next.jobs.slice(-40)
     }
     if (command.type === 'reputation') {
       const delta = /betray|hostile|distrust|拒绝|背叛/i.test(command.action) ? -1 : 1
