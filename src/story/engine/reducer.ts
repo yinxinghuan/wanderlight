@@ -430,7 +430,7 @@ export function applyParsedScene(
         detail: command.detail, lore: command.lore, facts: command.facts,
       })
       next.location = command.location
-      effects.push({ id: effectId, kind: 'event', text: t(cartridge.locale, 'arrived', { name: command.location }) })
+      effects.push({ id: effectId, kind: 'event', text: t(cartridge.locale, 'arrived', { name: command.location }), data: { arrival: command.location } })
     }
     if (command.type === 'inventory') {
       const existing = next.inventory.find((item) => item.label === command.item || item.id === command.item)
@@ -454,13 +454,13 @@ export function applyParsedScene(
         changed = true
       }
       next.inventory = next.inventory.filter((item) => item.count > 0)
-      if (changed) effects.push(changeBlock(effectId, `${command.action === 'add' ? t(cartridge.locale, 'gained') : t(cartridge.locale, 'lost')} ${command.item} ×${command.count}`, command.rarity ? { rarity: command.rarity } : undefined))
+      if (changed) effects.push(changeBlock(effectId, `${command.action === 'add' ? t(cartridge.locale, 'gained') : t(cartridge.locale, 'lost')} ${command.item} ×${command.count}`, { itemAction: command.action, ...(command.rarity ? { rarity: command.rarity } : {}) }))
     }
     if (command.type === 'reputation') {
       const delta = /betray|hostile|distrust|拒绝|背叛/i.test(command.action) ? -1 : 1
       const character = resolveCharacter(next, { type: 'character_update', character: command.npc }, index, cartridge)
       next.relationships.push({ id: effectId, actor: character.name, characterId: character.id, axis: command.action, delta, source: actionId })
-      effects.push(changeBlock(effectId, `${command.npc} · ${delta > 0 ? t(cartridge.locale, 'warmer') : t(cartridge.locale, 'colder')}`, { delta }))
+      effects.push(changeBlock(effectId, `${command.npc} · ${delta > 0 ? t(cartridge.locale, 'warmer') : t(cartridge.locale, 'colder')}`, { delta, relationshipChange: command.action }))
     }
     if (command.type === 'character_update') resolveCharacter(next, command, index, cartridge)
     if (command.type === 'party_change') {
@@ -517,17 +517,15 @@ export function applyParsedScene(
   const image = chooseSceneImage(
     save, next, imageParsed, cartridge, imagePrompt,
     domainImageNode && !imageSubject ? 'environment' : imageSubject,
+    imageCharacterId,
   )
-  const identityOwner = imageSubject === 'others' && imageCharacterId
-    ? next.characters.find((character) => character.id === imageCharacterId && character.visualIdentity)
-    : undefined
   next.blocks = [
     ...next.blocks,
     ...effects,
     ...(image.prompt ? [createImageBlock(`image-${next.scene}`, next.location, image.prompt, 'queued', '', {
       source: image.source ?? 'director', reason: image.reason ?? 'cadence', promptVersion: String(SCENE_IMAGE_PROMPT_VERSION),
       playerVisible: image.playerVisible ? 'true' : 'false',
-      ...(identityOwner ? { identityCharacterId: identityOwner.id } : {}),
+      ...(image.identityCharacterId ? { identityCharacterId: image.identityCharacterId } : {}),
     })] : []),
     ...(!next.sessionEnded && next.choices.length ? [createChoiceRecordBlock(next.scene, next.choices)] : []),
   ]

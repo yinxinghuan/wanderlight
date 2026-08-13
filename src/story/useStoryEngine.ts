@@ -13,6 +13,7 @@ import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirec
 import { domainOwnsDanger, resolveDomainAction, syncDomainDerivedState } from './engine/domainRules'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
+import { inventoryImagePrompt } from './engine/itemImage'
 
 type LegacyStorySave = Omit<StorySave, 'version' | 'locale' | 'characters' | 'partyMemberIds' | 'danger' | 'decisionContext'> & {
   version?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
@@ -129,12 +130,6 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     normalized.blocks = [...normalized.blocks, createChoiceRecordBlock(normalized.scene, normalized.choices)]
   }
   return upgradePendingSceneImagePrompts(syncDomainDerivedState(normalized, cartridge), cartridge)
-}
-
-function inventoryImagePrompt(item: InventoryItem, cartridge: StoryCartridge): string {
-  const direction = cartridge.itemImageDirection ?? 'elegant in-world artifact study with tactile natural materials and restrained directional light'
-  const content = item.imagePrompt ?? `A single inventory object from ${cartridge.copy.title}: ${item.label}. ${item.detail ?? ''} ${item.effect ?? ''} ${item.lore ?? ''}`
-  return `Create an inventory artifact plate for ${cartridge.copy.title}. Content brief: ${content}. Art direction: ${direction}. Follow only this text-defined medium, line treatment, palette, surface texture, lighting contrast, and degree of realism. Do not borrow any location, landmark, character, composition, or prop from the game's cover or opening scene. One object or one tightly grouped item set only, centered still life, square composition, no people, no hands, no text, no letters, no labels, no logo, no UI.`
 }
 
 export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode, incomingChatId?: string, imageIdentity: { ready: boolean; refUrl?: string } = { ready: true }) {

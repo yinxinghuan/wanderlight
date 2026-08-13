@@ -26,6 +26,8 @@ export interface StatDefinition {
   initial: number
   inverse?: boolean
   display?: 'bar' | 'number'
+  unit?: string
+  description?: string
   warningAt?: number
   dangerAt?: number
   maxDelta?: number
@@ -54,8 +56,8 @@ export interface StoryCharacter extends CharacterDefinition {
 }
 export interface Choice { id: string; label: string }
 export type ImageBlockStatus = 'idle' | 'queued' | 'generating' | 'ready' | 'failed'
-export const ITEM_IMAGE_STYLE_VERSION = 2
-export const SCENE_IMAGE_PROMPT_VERSION = 5
+export const ITEM_IMAGE_STYLE_VERSION = 3
+export const SCENE_IMAGE_PROMPT_VERSION = 6
 export type SceneImageSubject = 'player' | 'environment' | 'others'
 export interface StoryBlock { id: string; kind: 'narration' | 'dialogue' | 'check' | 'change' | 'event' | 'summary' | 'image' | 'choices'; text: string; speaker?: string; tone?: string; data?: Record<string, string | number> }
 export interface EntityMetric { id?: string; label: string; value: string }
@@ -175,6 +177,7 @@ export type SceneImageTrigger =
   | 'relationship-change'
   | 'objective-change'
   | 'skill-outcome'
+  | 'character-expression'
 
 export interface StoryImageDirector {
   maxQuietTurns: number

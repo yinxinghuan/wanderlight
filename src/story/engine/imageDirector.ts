@@ -5,6 +5,7 @@ export interface SceneImageDecision {
   source?: 'ai' | 'director'
   reason?: 'ai-proposal' | SceneImageTrigger | 'cadence'
   playerVisible?: boolean
+  identityCharacterId?: string
 }
 
 function lastScheduledScene(save: StorySave): number {
@@ -19,7 +20,20 @@ function firstTrigger(triggers: SceneImageTrigger[], allowed: SceneImageTrigger[
   return triggers.find((trigger) => allowed.includes(trigger))
 }
 
-function detectTriggers(previous: StorySave, parsed: ParsedScene): SceneImageTrigger[] {
+function expressionOwner(next: StorySave, parsed: ParsedScene) {
+  const dialogue = [...parsed.blocks].reverse().find((block) => block.kind === 'dialogue' && block.speaker)
+  if (!dialogue?.speaker) return undefined
+  const character = next.characters.find((entry) => entry.name.toLocaleLowerCase() === dialogue.speaker?.toLocaleLowerCase() && entry.visualIdentity)
+  if (!character) return undefined
+  const namedTurn = parsed.commands.some((command) =>
+    (command.type === 'reputation' && command.npc === character.name)
+    || (command.type === 'character_update' && (command.characterId === character.id || command.character === character.name))
+    || (command.type === 'party_change' && (command.characterId === character.id || command.character === character.name)))
+  const expressiveTone = /relieved|direct|frank|earnest|hurt|surprised|angry|warm|sad|disappointed|hesitant|soft|guarded|sincere|shy|smil|laugh|silent|松了口气|坦率|认真|受伤|惊讶|愤怒|温柔|难过|失望|犹豫|释然|紧张|警惕|真诚|害羞|笑|沉默/i.test(dialogue.tone ?? '')
+  return namedTurn || expressiveTone ? { character, dialogue } : undefined
+}
+
+function detectTriggers(previous: StorySave, next: StorySave, parsed: ParsedScene): SceneImageTrigger[] {
   const triggers: SceneImageTrigger[] = []
   for (const command of parsed.commands) {
     if (command.type === 'map_update') {
@@ -33,6 +47,7 @@ function detectTriggers(previous: StorySave, parsed: ParsedScene): SceneImageTri
     if (command.type === 'state' && command.value && command.value !== previous.objective) triggers.push('objective-change')
     if (command.type === 'skill_check') triggers.push('skill-outcome')
   }
+  if (expressionOwner(next, parsed)) triggers.push('character-expression')
   return [...new Set(triggers)]
 }
 
@@ -57,6 +72,10 @@ function focusFor(reason: SceneImageTrigger | 'cadence', parsed: ParsedScene, ne
   }
   if (reason === 'objective-change') return `the newly established objective: ${next.objective}`
   if (reason === 'skill-outcome') return 'the visible consequence of the latest attempt'
+  if (reason === 'character-expression') {
+    const owner = expressionOwner(next, parsed)
+    return owner ? `${owner.character.name}'s readable expression and gesture while saying: ${owner.dialogue.text}` : 'an important character reaction'
+  }
   return 'the most visually distinctive visible consequence of the latest turn'
 }
 
@@ -121,6 +140,7 @@ function buildScenePrompt(
   reason: SceneImageTrigger | 'cadence',
   aiProposal?: string,
   playerVisible = false,
+  identityCharacterId?: string,
 ): string {
   const beat = visibleBeat(parsed) || next.objective
   const proposal = aiProposal?.replace(/\s+/g, ' ').trim().slice(0, 620)
@@ -133,6 +153,7 @@ function buildScenePrompt(
     `Current location hint: ${latestLocation(next, parsed)}. Use it only when consistent with the latest visible beat; never drag an earlier location into a newer scene.`,
     `Mandatory art direction: ${direction}.`,
     playerVisible ? 'The player protagonist is the dominant visible human in this frame and must be the same person performing the single main player action. Keep their face naturally readable and do not assign that action or identity to a companion, NPC, background figure or animal.' : '',
+    identityCharacterId ? 'Use a medium close-up or chest-up reaction shot. The named identity owner is the only clearly readable face; make their current emotion legible through eyes, mouth, posture and one restrained hand gesture. Keep enough current-location background to preserve narrative context, and avoid a centered passport portrait.' : '',
     'Compose one readable moment with one dominant action and at most two focal subjects. Choose a camera position, scale, lighting pattern and silhouette that differ from earlier images.',
     'Ignore all cover art and opening-scene imagery. Derive the depicted location, action, subjects, props and weather only from the primary shot brief and latest visible story beat.',
     'Show only people, objects, places and consequences established in the latest visible story. No montage, split screen, flash-forward, readable text, letters, logo, border, poster layout or UI.',
@@ -183,32 +204,38 @@ export function chooseSceneImage(
   cartridge: StoryCartridge,
   aiPrompt?: string,
   imageSubject?: SceneImageSubject,
+  imageCharacterId?: string,
 ): SceneImageDecision {
   const proposal = aiPrompt?.trim()
   if (proposal) {
     const visible = playerIsVisible(parsed, proposal, imageSubject)
+    const identityOwner = imageSubject === 'others' && imageCharacterId
+      ? next.characters.find((character) => character.id === imageCharacterId && character.visualIdentity)
+      : undefined
     return {
-      prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', proposal, visible),
+      prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', proposal, visible, identityOwner?.id),
       source: 'ai',
       reason: 'ai-proposal',
       playerVisible: visible,
+      identityCharacterId: identityOwner?.id,
     }
   }
 
   const director = cartridge.imageDirector
   if (!director) return {}
-  const visible = playerIsVisible(parsed, undefined, imageSubject)
-  const triggers = detectTriggers(previous, parsed)
+  const owner = expressionOwner(next, parsed)
+  const visible = owner ? false : playerIsVisible(parsed, undefined, imageSubject)
+  const triggers = detectTriggers(previous, next, parsed)
   const guaranteed = firstTrigger(triggers, director.guaranteedTriggers)
-  if (guaranteed) return { prompt: buildScenePrompt(cartridge, next, parsed, guaranteed, undefined, visible), source: 'director', reason: guaranteed, playerVisible: visible }
+  if (guaranteed) return { prompt: buildScenePrompt(cartridge, next, parsed, guaranteed, undefined, visible, owner?.character.id), source: 'director', reason: guaranteed, playerVisible: visible, identityCharacterId: owner?.character.id }
 
   const turnsSinceImage = next.scene - lastScheduledScene(previous)
   const soft = firstTrigger(triggers, director.softTriggers)
   if (soft && turnsSinceImage >= director.softCooldownTurns) {
-    return { prompt: buildScenePrompt(cartridge, next, parsed, soft, undefined, visible), source: 'director', reason: soft, playerVisible: visible }
+    return { prompt: buildScenePrompt(cartridge, next, parsed, soft, undefined, visible, owner?.character.id), source: 'director', reason: soft, playerVisible: visible, identityCharacterId: owner?.character.id }
   }
   if (turnsSinceImage >= director.maxQuietTurns) {
-    return { prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', undefined, visible), source: 'director', reason: 'cadence', playerVisible: visible }
+    return { prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', undefined, visible, owner?.character.id), source: 'director', reason: 'cadence', playerVisible: visible, identityCharacterId: owner?.character.id }
   }
   return {}
 }

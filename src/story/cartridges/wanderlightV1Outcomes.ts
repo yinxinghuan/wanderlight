@@ -37,7 +37,7 @@ This is not a promise that demands you stay. It is one shared road tomorrow, wit
 [session_end: reason="You rest at the Silverleaf field house until dawn. The survey route, pay, and your agreement with Mira are saved."]`
 
   const rowanBoundary = zh
-    ? `值夜陶艺师让你先试着调整窑门的上铰链。你托住门，罗温只负责递工具，没有把你的工作接过去。门重新合拢时，陶艺师当场付了九枚旅费。
+    ? `值夜陶艺师让你先试着调整窑门的上铰链。你托住门，罗温只负责递工具，没有把你的工作接过去。门重新合拢时，陶艺师当场付了九枚钱币。
 
 罗温明早要检查一条通往雾杉林的旧支线。他愿意带你看路线，但先说明那不是乘务工作，也不会替你安排下一份职业。
 

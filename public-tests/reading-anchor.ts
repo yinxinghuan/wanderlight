@@ -8,7 +8,7 @@ const blocks: StoryBlock[] = [
   { id: 'action-1', kind: 'event', text: '询问今晚的工作。' },
   { id: 'result-1', kind: 'narration', text: '招工人指向正在卸货的月线。' },
   { id: 'image-1', kind: 'image', text: '', data: { status: 'ready' } },
-  { id: 'change-1', kind: 'change', text: '旅费增加。' },
+  { id: 'change-1', kind: 'change', text: '钱币增加。' },
   { id: 'choices-1', kind: 'choices', text: '["报名卸货","继续询问","观察周围"]' },
 ]
 
