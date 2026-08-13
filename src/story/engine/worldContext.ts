@@ -5,7 +5,7 @@ const maxRecentKnownCharacters = 30
 
 function visibleHistory(blocks: StoryBlock[]) {
   return blocks
-    .filter((block) => block.kind !== 'image')
+    .filter((block) => block.kind !== 'image' && block.kind !== 'choices')
     .slice(-maxRecentBlocks)
     .map((block) => ({ kind: block.kind, speaker: block.speaker, tone: block.tone, text: block.text }))
 }

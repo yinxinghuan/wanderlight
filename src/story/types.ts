@@ -57,7 +57,7 @@ export type ImageBlockStatus = 'idle' | 'queued' | 'generating' | 'ready' | 'fai
 export const ITEM_IMAGE_STYLE_VERSION = 2
 export const SCENE_IMAGE_PROMPT_VERSION = 5
 export type SceneImageSubject = 'player' | 'environment' | 'others'
-export interface StoryBlock { id: string; kind: 'narration' | 'dialogue' | 'check' | 'change' | 'event' | 'summary' | 'image'; text: string; speaker?: string; tone?: string; data?: Record<string, string | number> }
+export interface StoryBlock { id: string; kind: 'narration' | 'dialogue' | 'check' | 'change' | 'event' | 'summary' | 'image' | 'choices'; text: string; speaker?: string; tone?: string; data?: Record<string, string | number> }
 export interface EntityMetric { id?: string; label: string; value: string }
 export interface MapNode { id: string; label: string; connectedTo?: string; current?: boolean; visited?: boolean; detail?: string; lore?: string; facts?: string[] }
 export interface InventoryItem {

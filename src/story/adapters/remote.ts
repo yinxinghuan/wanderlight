@@ -29,11 +29,12 @@ export const remoteAdapter: StoryAdapter = {
     const dangerContract = dangerDirectiveContract(context.dangerDirective)
     const decisionAnchorContract = 'DECISION ANCHOR: Normally omit it. Only if all choices need one shared premise that their labels cannot express, emit [situation: "Independent paraphrase"] with at most 28 Chinese or 96 English characters. Never copy a prose sentence or instruct the player to choose.'
     const stateDisplayContract = 'STATE DISPLAY: Never print a status-update heading or list current values, location, role, objective, or inventory in visible prose. Describe consequences naturally; submit numeric changes only through widget commands so the engine can render authoritative deltas.'
+    const choiceFormatContract = 'CHOICE FORMAT: Put choices only in the final [choices: ...] command. Never repeat them in visible prose as bullets, a numbered list, or a “you can / 你现在可以” paragraph.'
     const response = await fetch(`${endpoint}/api/generate`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chatId,
-        userMessage: `AUTHORITATIVE_WORLD_STATE_JSON:\n${JSON.stringify(buildWorldContext(context))}\n\n${narrativeStyleContract(context.locale)}\n\n${partyContinuityContract}\n${dangerContract}\n${decisionAnchorContract}\n${stateDisplayContract}\n\nPLAYER_ACTION:\n${action}${languageInstruction}`,
+        userMessage: `AUTHORITATIVE_WORLD_STATE_JSON:\n${JSON.stringify(buildWorldContext(context))}\n\n${narrativeStyleContract(context.locale)}\n\n${partyContinuityContract}\n${dangerContract}\n${decisionAnchorContract}\n${stateDisplayContract}\n${choiceFormatContract}\n\nPLAYER_ACTION:\n${action}${languageInstruction}`,
         streaming: false,
       }),
     })

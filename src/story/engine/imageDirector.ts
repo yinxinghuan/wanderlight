@@ -62,7 +62,7 @@ function focusFor(reason: SceneImageTrigger | 'cadence', parsed: ParsedScene, ne
 
 function visibleBeat(parsed: ParsedScene): string {
   return parsed.blocks
-    .filter((block) => block.kind !== 'change' && block.kind !== 'image' && block.text.trim())
+    .filter((block) => block.kind !== 'change' && block.kind !== 'image' && block.kind !== 'choices' && block.text.trim())
     .slice(-4)
     .map((block) => block.speaker ? `${block.speaker}: ${block.text}` : block.text)
     .join(' ')

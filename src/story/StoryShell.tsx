@@ -7,6 +7,7 @@ import { ITEM_IMAGE_STYLE_VERSION, type DrawerId, type ImageBlockStatus, type In
 import { useStoryEngine } from './useStoryEngine'
 import { usePlayerProfile, type PlayerProfile } from './usePlayerProfile'
 import { useStoryAudio } from './audio/useStoryAudio'
+import { decodeChoiceRecord, resolveNumberedChoiceInput } from './engine/choiceInput'
 
 function useInitialCartridge() {
   return new URLSearchParams(window.location.search).get('cartridge')
@@ -180,6 +181,10 @@ function InlineSceneImage({ block, cartridge, retry }: { block: StoryBlock; cart
 
 function StoryBlockView({ block, cartridge, retryImage, player }: { block: StoryBlock; cartridge: StoryCartridge; retryImage: (id: string) => void; player: PlayerProfile }) {
   if (block.kind === 'image') return <InlineSceneImage block={block} cartridge={cartridge} retry={retryImage} />
+  if (block.kind === 'choices') {
+    const labels = decodeChoiceRecord(block.text)
+    return labels.length ? <section className="st-choice-record" data-block-id={block.id}><ol>{labels.map((label, index) => <li key={`${block.id}-${index}`}><small>{String(index + 1).padStart(2, '0')}</small><span>{label}</span></li>)}</ol></section> : null
+  }
   if (block.kind === 'dialogue') return <div className="st-message st-message--character" data-block-id={block.id}><div className="st-message__avatar">{block.speaker?.slice(0, 1)}</div><div className="st-message__body"><header><span>{block.speaker}</span><small>{block.tone}</small></header><p>{block.text}</p></div></div>
   if (block.kind === 'check') return <div className="st-result st-result--check" data-block-id={block.id}><div><span>{checkPassed(block) ? 'PASS' : 'MISS'}</span><p>{block.text}</p></div><section><b>{block.data?.roll}</b><i>+</i><b>{block.data?.modifier}</b><i>=</i><strong>{block.data?.total}</strong><small>DC {block.data?.dc}</small></section></div>
   if (block.kind === 'change') return <StatChangeResult block={block} cartridge={cartridge} />
@@ -207,14 +212,14 @@ function Composer({ cartridge, engine, onAct }: { cartridge: StoryCartridge; eng
   const [custom, setCustom] = useState('')
   const repliesRef = useRef<HTMLDivElement>(null)
   useEffect(() => { repliesRef.current?.scrollTo({ left: 0, behavior: 'auto' }) }, [engine.save.scene])
-  const submit = () => {
-    const value = custom.trim()
-    if (!value || engine.busy) return
-    onAct(value); setCustom('')
-  }
   const hasStoryChoices = engine.save.choices.length > 0
   const closedCheckpoint = engine.save.sessionEnded && !hasStoryChoices
   const choices = hasStoryChoices ? engine.save.choices : closedCheckpoint ? [{ id: `continue-${engine.save.scene}`, label: cartridge.copy.continue }] : []
+  const submit = () => {
+    const value = custom.trim()
+    if (!value || engine.busy) return
+    onAct(resolveNumberedChoiceInput(value, choices)); setCustom('')
+  }
   return <section className="st-composer" aria-label={t(cartridge.locale, 'reply')}>
     {engine.save.scene > 0 && choices.length > 0 && engine.save.decisionContext && <div className="st-decision-context"><small>{t(cartridge.locale, 'currentSituation')}</small><p>{engine.save.decisionContext}</p></div>}
     <div className="st-quick-replies" ref={repliesRef}>

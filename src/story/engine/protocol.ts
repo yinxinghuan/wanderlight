@@ -89,10 +89,17 @@ function extractNaturalChoices(source: string): { prose: string; choices: string
   }
   if (choices.length < 2 || choices.length > 5 || new Set(choices).size !== choices.length) return { prose: source, choices: [] }
   const previous = lines.slice(0, choiceIndexes[0]).reverse().find((line) => line.trim())?.trim() ?? ''
-  const hasChoiceCue = /(?:你可以|可选择|选项|下一步|接下来|决定|打算|choose|choice|options?|next|you can|what (?:will|do) you)/i.test(previous)
+  const hasChoiceCue = /(?:你(?:现在)?可以|可选择|选项|下一步|接下来|决定|打算|choose|choice|options?|next|you can|what (?:will|do) you)/i.test(previous)
   const beginsLikeAction = /^(?:先|去|前往|沿|循|跟随|返回|留下|等待|观察|检查|调查|搜索|询问|告诉|帮助|拒绝|接受|进入|使用|带|把|让|与|继续|尝试|绕|登|走|停|休息|follow|ask|return|stay|wait|watch|inspect|investigate|search|tell|help|refuse|accept|enter|use|take|continue|try|climb|walk|go|leave)/i
   if (!hasChoiceCue && (choices.length !== 3 || !choices.every((choice) => beginsLikeAction.test(choice)))) return { prose: source, choices: [] }
   choiceIndexes.forEach((index) => { lines[index] = '' })
+  // A generic lead-in belongs to the duplicated option list, not to the
+  // narrative. Remove it together with the bullets so the bottom action tray
+  // remains the only place where the player is asked to choose.
+  if (hasChoiceCue) {
+    const cueIndex = lines.slice(0, choiceIndexes[0]).map((line) => line.trim()).lastIndexOf(previous)
+    if (cueIndex >= 0 && /^(?:你(?:现在)?可以|可选择|选项|下一步|接下来|choose|choices?|options?|next|you can|what (?:will|do) you)[^。.!?！？]{0,32}[：:]?$/i.test(previous)) lines[cueIndex] = ''
+  }
   return { prose: lines.join('\n'), choices }
 }
 
@@ -230,10 +237,12 @@ export function parseStoryProtocol(raw: string, locale: Locale = 'zh'): ParsedSc
   // machine residue, and leaving it at the tail prevents natural-choice scan.
   prose = prose.replace(/^\s*\[[a-z_]+\s*:.*$/gim, '\n')
   prose = removeNarratedStatusDump(prose)
-  // A truncated/empty structured tag must not suppress otherwise recoverable
-  // numbered choices in the visible prose.
-  const hasStructuredChoices = spans.some((span) => span.command.type === 'choices' && span.command.choices.length >= 2)
-  const natural = hasStructuredChoices ? { prose, choices: [] } : extractNaturalChoices(prose)
+  // Always recover a visible tail option list, even when the model also emits
+  // a structured [choices] command. Models occasionally produce two different
+  // sets in one response. The visible list is part of the player's witnessed
+  // scene, so it is removed from prose and appended after machine commands;
+  // the reducer therefore makes it the single authoritative action set.
+  const natural = extractNaturalChoices(prose)
   prose = natural.prose
 
   const blocks: StoryBlock[] = []

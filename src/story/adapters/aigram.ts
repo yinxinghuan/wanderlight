@@ -41,6 +41,7 @@ DECISION ANCHOR IS OPTIONAL: normally omit it because the visible prose already 
 CHOICE GROUNDING IS A HARD RULE: every person, place, object, institution, and immediate goal named by a choice must already be visible in this response or established in the authoritative state. Never use a choice to introduce a new noun or story premise.
 LOCATION CONTINUITY IS A HARD RULE: before any map_update changes the location, visibly close the previous place and pass through this recurring journey anchor: ${context.cartridge.transitionAnchor ?? 'the current route record'}. Only then narrate arrival. Never cut directly from one world, district, chapter, or time period into another.
 Finish every response, including a session_end checkpoint, with exactly three distinct actionable choices.
+Put those choices only in the final [choices: ...] command. Never repeat them as bullets, a numbered list, or a visible “you can / 你现在可以” paragraph.
 Every response must advance at least one trackable fact: situation, time, location, stat, inventory, relationship, or objective. Atmosphere alone is not progress.
 STATE DISPLAY IS ENGINE-OWNED: never print a status-update heading or a list of current values, locations, roles, objectives, or inventory in visible prose. Describe consequences naturally and submit every numeric change only through widget commands; the interface will render the authoritative delta.
 Use dialogue lines only in this form:

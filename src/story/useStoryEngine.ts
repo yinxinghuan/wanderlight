@@ -6,7 +6,7 @@ import { aigramAdapter } from './adapters/aigram'
 import { mockAdapter } from './adapters/mock'
 import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
-import { applyParsedScene, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
+import { applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { parseStoryProtocol } from './engine/protocol'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
@@ -62,7 +62,7 @@ function recoverPersistedChoices(candidate: LegacyStorySave, cartridge: StoryCar
   if (existing.length > 1 || (existing.length === 1 && !isGenericFallback)) return candidate
   let lastActionIndex = -1
   candidate.blocks.forEach((block, index) => { if (block.kind === 'event' && block.id.startsWith('action-')) lastActionIndex = index })
-  const tail = candidate.blocks.slice(lastActionIndex + 1).filter((block) => block.kind !== 'image').map((block) => block.text).join('\n')
+  const tail = candidate.blocks.slice(lastActionIndex + 1).filter((block) => block.kind !== 'image' && block.kind !== 'choices').map((block) => block.text).join('\n')
   const parsed = parseStoryProtocol(tail, candidate.locale ?? cartridge.locale)
   const recovered = parsed.commands.find((command) => command.type === 'choices')
   if (!recovered || recovered.type !== 'choices' || recovered.choices.length < 2) return candidate
@@ -125,6 +125,9 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     danger: normalizeDangerState(repaired.danger), facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
   } as StorySave
   if (!normalized.sessionEnded && normalized.choices.length < 2) normalized.choices = createRecoveryChoices(normalized, cartridge)
+  if (!normalized.sessionEnded && normalized.choices.length && !normalized.blocks.some((block) => block.id === `choices-${normalized.scene}`)) {
+    normalized.blocks = [...normalized.blocks, createChoiceRecordBlock(normalized.scene, normalized.choices)]
+  }
   return upgradePendingSceneImagePrompts(syncDomainDerivedState(normalized, cartridge), cartridge)
 }
 

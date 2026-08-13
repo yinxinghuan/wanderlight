@@ -4,6 +4,7 @@ import { chooseSceneImage } from './imageDirector'
 import { createInitialDangerState, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, choicesAreGrounded, createTransitionBlock } from './continuity'
 import { applyDomainResolution, domainAllowsModelCommand, syncDomainDerivedState } from './domainRules'
+import { encodeChoiceRecord } from './choiceInput'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -17,7 +18,7 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
     decisionContext: '',
     stats: Object.fromEntries(cartridge.statDefinitions.map((stat) => [stat.id, stat.initial])),
     facts: { ...(cartridge.initialFacts ?? {}) },
-    blocks: [...cartridge.opening.blocks, createImageBlock('image-0', cartridge.opening.location, cartridge.opening.imagePrompt, 'idle')],
+    blocks: [...cartridge.opening.blocks, createImageBlock('image-0', cartridge.opening.location, cartridge.opening.imagePrompt, 'idle'), createChoiceRecordBlock(0, cartridge.opening.choices)],
     choices: cartridge.opening.choices, map: cartridge.initialMap.map((node) => ({ ...node, visited: node.visited ?? Boolean(node.current), facts: node.facts ? [...node.facts] : undefined })),
     inventory: cartridge.initialInventory.map((item) => ({ ...item, metrics: item.metrics?.map((metric) => ({ ...metric })), imageStatus: item.imageUrl ? 'ready' : 'idle' })),
     characters: cartridge.characters.filter((character) => !character.hiddenUntilIntroduced).map((character) => {
@@ -31,6 +32,10 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
     sessionEnded: false,
   }
   return syncDomainDerivedState(initial, cartridge)
+}
+
+export function createChoiceRecordBlock(scene: number, choices: StorySave['choices']): StoryBlock {
+  return { id: `choices-${scene}`, kind: 'choices', text: encodeChoiceRecord(choices), data: { scene } }
 }
 
 type CharacterCommand = Extract<ParsedCommand, { type: 'character_update' | 'party_change' }>
@@ -109,7 +114,7 @@ type LegacyCharacterState = Pick<StorySave, 'blocks' | 'relationships'> & Partia
 export function normalizeCharacterState(candidate: LegacyCharacterState, cartridge: StoryCartridge): Pick<StorySave, 'characters' | 'partyMemberIds' | 'relationships'> {
   const staticById = new Map(cartridge.characters.map((character) => [character.id, character]))
   const inputCharacters = Array.isArray(candidate.characters) ? candidate.characters : []
-  const hasVisibleIntroduction = (character: StoryCharacter): boolean => candidate.blocks.some((block) => block.kind !== 'image' && `${block.speaker ?? ''} ${block.text}`.includes(character.name))
+  const hasVisibleIntroduction = (character: StoryCharacter): boolean => candidate.blocks.some((block) => block.kind !== 'image' && block.kind !== 'choices' && `${block.speaker ?? ''} ${block.text}`.includes(character.name))
   const characters: StoryCharacter[] = inputCharacters.filter((character) => {
     const definition = staticById.get(character.id)
     if (!definition?.hiddenUntilIntroduced) return true
@@ -524,6 +529,7 @@ export function applyParsedScene(
       playerVisible: image.playerVisible ? 'true' : 'false',
       ...(identityOwner ? { identityCharacterId: identityOwner.id } : {}),
     })] : []),
+    ...(!next.sessionEnded && next.choices.length ? [createChoiceRecordBlock(next.scene, next.choices)] : []),
   ]
   return syncDomainDerivedState(next, cartridge)
 }
