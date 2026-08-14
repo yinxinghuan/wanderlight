@@ -6,14 +6,14 @@ import { aigramAdapter } from './adapters/aigram'
 import { mockAdapter } from './adapters/mock'
 import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
-import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { canonicalizePaymentMetadata, repairKnownPaymentGap, validatePaymentConsistency } from './engine/paymentConsistency'
 import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
 import { activeStatFloorRule, domainOwnsDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
-import { resolveDeterministicOpeningTurn } from './engine/authoredTurns'
+import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from './engine/authoredTurns'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
 import { inventoryImagePrompt } from './engine/itemImage'
@@ -126,13 +126,14 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     }
   })
   const characterState = normalizeCharacterState(repaired, cartridge)
-  const normalized = {
+  let normalized = {
     ...repaired, ...characterState, version: 10, locale: repaired.locale ?? cartridge.locale,
     decisionContext: repaired.version === 9 || repaired.version === 10 ? repaired.decisionContext ?? '' : '',
     remoteChatId: incomingChatId || repaired.remoteChatId, blocks, inventory, map,
     danger: normalizeDangerState(repaired.danger), jobs: (repaired.jobs ?? []).map((job) => ({ ...job })),
     facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
   } as StorySave
+  normalized = restoreDeterministicRecoveryChoice(normalized, cartridge)
   if (!normalized.sessionEnded && normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
   const floor = activeStatFloorRule(normalized, cartridge)
   if (!normalized.sessionEnded && floor) {
@@ -311,28 +312,30 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
       }
       const domainResolution = resolveDomainAction(base, activeCartridge, normalizedAction)
       const authoredOpeningTurn = domainResolution ? undefined : resolveDeterministicOpeningTurn(base, activeCartridge, normalizedAction)
+      const authoredChoiceTurn = domainResolution || authoredOpeningTurn ? undefined : resolveDeterministicChoiceTurn(base, activeCartridge, normalizedAction)
+      const authoredTurn = authoredOpeningTurn ?? authoredChoiceTurn
       const dangerDirective = domainResolution?.status === 'rejected' || domainOwnsDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
       let result = domainResolution
         ? { content: domainResolution.status === 'accepted' ? domainResolution.successText : domainResolution.reasons.join(activeCartridge.locale === 'zh' ? '；' : '; ') }
-        : authoredOpeningTurn
+        : authoredTurn
           ? {
-              content: authoredOpeningTurn.content,
-              imagePrompt: authoredOpeningTurn.imagePrompt,
-              imageSubject: authoredOpeningTurn.imageSubject,
-              imageCharacterId: authoredOpeningTurn.imageCharacterId,
+              content: authoredTurn.content,
+              imagePrompt: authoredTurn.imagePrompt,
+              imageSubject: authoredTurn.imageSubject,
+              imageCharacterId: authoredTurn.imageCharacterId,
             }
         : await adapter.send(normalizedAction, { cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective }, setProgress)
       let parsed = parseStoryProtocol(result.content, actionLocale)
       if (!domainResolution) {
         parsed = canonicalizePaymentMetadata(base, parsed, activeCartridge, normalizedAction)
-        let canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction, Boolean(authoredOpeningTurn))
+        let canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction, Boolean(authoredTurn))
         parsed = canonical.parsed
         if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
         const turnViolations = mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)
         const violations = [...validatePaymentConsistency(base, parsed, activeCartridge), ...turnViolations]
         if (violations.length) {
           setProgress({ label: t(actionLocale, 'checkingState'), percent: 82 })
-          if (authoredOpeningTurn) throw new Error(`invalid deterministic opening turn: ${violations.join(', ')}`)
+          if (authoredTurn) throw new Error(`invalid deterministic turn: ${violations.join(', ')}`)
           result = await adapter.send(normalizedAction, {
             cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective,
             repair: { draft: result.content, violations },

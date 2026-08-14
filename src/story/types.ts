@@ -239,10 +239,20 @@ export interface StoryCartridge {
   initialPartyMemberIds?: string[]
   initialMap: MapNode[]
   initialInventory: InventoryItem[]
+  deterministicChoiceTurns?: DeterministicChoiceTurn[]
   demoTurns: DemoTurn[]
 }
 
 export interface DemoTurn { match: string[]; content: string; imagePrompt?: string; imageSubject?: SceneImageSubject; imageCharacterId?: string }
+export interface DeterministicChoiceTurn {
+  action: string
+  turn: DemoTurn
+  when?: {
+    locations?: string[]
+    characterIds?: string[]
+    jobs?: Array<{ id: string; statuses?: JobContract['status'][] }>
+  }
+}
 
 export interface StorySave {
   version: 10

@@ -5,6 +5,7 @@ import { createInitialDangerState, normalizeDangerState, settleDangerTurn } from
 import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
 import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
+import { resolveDeterministicChoiceTurn } from './authoredTurns'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -504,6 +505,20 @@ export function repairLegacyConsistencyRecovery<T extends {
   const objective = currentWasLegacy && currentAction && eventTexts.has(candidate.objective.trim()) ? currentAction : candidate.objective
   if (objective !== candidate.objective) changed = true
   return changed ? { ...candidate, objective, choices, blocks } : candidate
+}
+
+export function restoreDeterministicRecoveryChoice(save: StorySave, cartridge: StoryCartridge): StorySave {
+  if (save.sessionEnded || !save.blocks.some((block) => block.id === `consistency-recovery-${save.scene}`)) return save
+  const action = rootConsistencyAction(save, cartridge)
+  if (!action || !resolveDeterministicChoiceTurn(save, cartridge, action, { requireVisibleChoice: false })) return save
+  const retry = { id: `scripted-recovery-${save.scene}`, label: action }
+  const choices = [retry, ...save.choices.filter((choice) => choice.label !== action)].slice(0, 5)
+  if (save.choices.length === choices.length && save.choices.every((choice, index) => choice.id === choices[index]?.id && choice.label === choices[index]?.label)) return save
+  const recordId = `choices-${save.scene}`
+  const blocks = save.blocks.map((block) => block.id === recordId && block.kind === 'choices'
+    ? { ...block, text: encodeChoiceRecord(choices) }
+    : block)
+  return { ...save, choices, blocks }
 }
 
 function validChoiceLabels(labels: string[]): string[] {

@@ -50,11 +50,11 @@ public-tests/
 
 每个非 demo 生成回合还必须输出唯一 `[scene_location]`；正文抵达新地点必须同回合输出 `[map_update]`，明确接受或被交付一项新任务时必须输出 `[state]`，场景图必须用 `[image_location]` 声明同一地点。`turnConsistency.ts` 联合检查地点、任务、最终选项和图片提示；缺失的纯协议地点标签从权威存档补齐。若可见正文与唯一 `scene_location` 明确证明抵达一个已知地图节点，canonicalizer 会补齐遗漏的 `map_update`；未知地点仍拒绝。模型缺少地点绑定的图片提议会被丢弃并交由本地图片导演重建；可信作者开场图则可在本地绑定当前地点。
 
-真正的状态冲突会触发一次完整重写；重写仍不一致时 `applyConsistencyRecovery()` 拒绝不可靠内容、保持地点/目标/数值/物品/关系不变，并把失败行动写入 `lastActionId` 与隔离事实，但不再把它显示成快捷选项。`resolveConsistencyRecoverySelection()` 与 `applyConsistencyRecoverySelection()` 只处理两个本地出口并立即离开恢复态；自由输入仍走正常开放行动。成功提交任一回合后清除隔离。`repairLegacyConsistencyRecovery()` 同步改写旧正文、文章选项和底部选项，移除会把玩家再次推回失败输出的循环行动。
+真正的状态冲突会触发一次完整重写；重写仍不一致时 `applyConsistencyRecovery()` 拒绝不可靠内容、保持地点/目标/数值/物品/关系不变，并把未经证明的失败行动写入 `lastActionId` 与隔离事实，但不再把它显示成普通快捷选项。`resolveConsistencyRecoverySelection()` 与 `applyConsistencyRecoverySelection()` 处理本地出口并立即离开恢复态；自由输入仍走正常开放行动。成功提交任一回合后清除隔离。`repairLegacyConsistencyRecovery()` 同步改写旧正文、文章选项和底部选项；`restoreDeterministicRecoveryChoice()` 进一步识别后来已经由地点、人物和工作合同证明可执行的旧失败行动，将其作为精确本地路线恢复，而不是继续要求玩家放弃。
 
 `canonicalizeTurnMetadata()` 还会在回合提交前逐项处理选择：删除不能在新场景中直接行动的旧地点选项，再用 `filterGroundedChoices()` 检查当回合正文与权威人物、地图详情、物品、活动工作。中文先拆分稳定实体，再要求剩余具体词全部可追溯，禁止任意二字命中。过滤是逐项而不是整组否决；剩下 `1–5` 项都可直接提交和渲染。只有零个可靠选项时才进入本地恢复。
 
-`authoredTurns.ts` 将场景 `0` 的固定 choice id 映射到 `opening.deterministicTurns`。三个开场按钮因此不调用模型，仍经过协议解析、支付 canonicalizer 和回合一致性验证；普通自由输入没有精确 choice id 匹配，继续调用 Adapter。
+`authoredTurns.ts` 将场景 `0` 的固定 choice id 映射到 `opening.deterministicTurns`，并用 `deterministicChoiceTurns` 处理后续已经成立的合同、固定同行和主路线节点。后者必须同时精确匹配当前可见按钮，并满足声明的地点、稳定人物和工作状态；因此系统按钮不调用模型但仍经过协议解析、支付 canonicalizer 和回合一致性验证。相似自由输入不会被关键词误捕，继续调用 Adapter。
 
 七个地图节点分别保存本地工作、社交和休息事实；这些事实进入 Aigram 世界上下文，防止自由生成把所有地点写成同一套活动。危险导演为新存档保留六个完整场景的首轮宽限，且作者/住宿 `session_end` 检查点不再叠加随机危机，避免自然落点被无关判定卡打断。
 
@@ -98,4 +98,4 @@ public-tests/
 - **调整画风或素材**：统一修改 cartridge 中的 `GOUACHE`、`sceneImageDirection` 与 `doc/visual.md`；正式资产只通过 AlterU Media Service 生成。换风格前必须重新做锚点→换地点 edit 连续性评审，不能只换一个风格词。
 - **调整数值与压力**：修改 cartridge 的 `statDefinitions`、`dangerDirector` 和对应 domain rules，并同步 `doc/requirements.md` 的具体数值与恢复合同。
 - **新增后端能力**：Aigram 平台能力扩展 `shared/runtime/bridge.ts`；若未来增加游戏自有 `/api/*`，必须从 `src/game-id.ts` 计算 `API_BASE = '/' + GAME_ID`，禁止写死旧 UUID 或裸请求 `/api/*`。
-- **验收**：公开仓库运行 `npm run test:image-director`、`npm run test:turn`、`npm run test:payment`、`npm run test:security`、`npm run test:choices`、`npm run test:resume`、`npm run test:audio` 与 `npm run build`。任何说话者的重要对白强制表情镜头、已锚定人物身份绑定、动态人物不借错身份、环境图覆盖防护、短事务对白不过度出图、场景/目标/选项/配图原子对齐、截图旧档单次修复、报价不入账、合同原子结算、截图模糊付款拦截、消费扣款、重复结算防护、正文/行动票对齐、数字输入、恢复阅读锚点、程序化音频和恶意协议边界均有可公开机械回归；完整六路浏览器试玩、双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。
+- **验收**：公开仓库运行 `npm run test:image-director`、`npm run test:turn`、`npm run test:deterministic-choices`、`npm run test:payment`、`npm run test:security`、`npm run test:choices`、`npm run test:resume`、`npm run test:audio` 与 `npm run build`。任何说话者的重要对白强制表情镜头、已锚定人物身份绑定、动态人物不借错身份、环境图覆盖防护、短事务对白不过度出图、场景/目标/选项/配图原子对齐、确定性合同按钮与旧恢复存档修复、报价不入账、合同原子结算、截图模糊付款拦截、消费扣款、重复结算防护、正文/行动票对齐、数字输入、恢复阅读锚点、程序化音频和恶意协议边界均有公开机械回归；完整六路生产模式浏览器试玩还会对生成层注入不一致回复，要求主路线零 `game-chat` 调用完成，并单独验证自由输入一次调用与不可执行输入具体解释。双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。

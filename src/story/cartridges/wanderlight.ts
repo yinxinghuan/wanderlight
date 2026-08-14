@@ -212,6 +212,7 @@ function make(locale: Locale): StoryCartridge {
     : `At the end of a vine row, someone is tying a broken branch back to its wooden frame. They slide the shears into a belt sheath and turn: about twenty-nine, with deep-gold curls at the jaw, a narrow brass leaf clip at the left temple, and a short stone-blue cape.\n\nA window opens at the field house. Someone inside calls, “Talin, two more breaks in the east row.”\n\nTalin glances that way, then down at the mud covering your shoes.\n\n[Talin Rey] [main] [easygoing]: "If you’re only walking, I can point out a dry route. If you want coin, help me tie those two breaks in the east row."\n[character_update: character_id="talin-rey" character="Talin Rey" role="Age 29 · seasonal trellis repairer" detail="Repairing rain-damaged trellises at Silverleaf Vineyard" lore="Comes from the tidal islands for seasonal work" vitality="79" stress="33" skills="Repair: 4|Wayfinding: 3" visual_appearance="One grounded adult person age 29, androgynous lean build, light brown skin, jaw-length deep-golden curly hair, narrow brass leaf clip at the left temple, attentive gray eyes, stone-blue short travel cape, dark work shirt, pruning shears at belt, EDITORIAL GOUACHE PAINTING, opaque matte brush shapes, visible dry-brush edges, simplified but observant adult features, sophisticated contemporary travel illustration, no glossy 3D, no photorealism, natural anatomy, no text" visual_traits="age 29 adult presentation|jaw-length deep-golden curls|narrow brass leaf clip at left temple|light brown skin|attentive gray eyes" visual_wardrobe="stone-blue short cape|dark practical work shirt|weathered brass fasteners" visual_forbidden="teen appearance|long straight hair|missing brass leaf clip|school uniform|exaggerated anatomy"]\n[choices: "Help Talin repair the east-row trellis"|"Ask Talin to point out a mud-free path"|"Return to the empty stool across from Mira"]`
 
   const v1Turns = wanderlightV1Content(locale)
+  const v1Outcomes = wanderlightV1Outcomes(locale)
   const miraOpeningTurn = {
     match: zh ? ['种荚', '短发', '帮'] : ['seed', 'short-haired', 'help'],
     content: miraDebut,
@@ -219,6 +220,27 @@ function make(locale: Locale): StoryCartridge {
     imageSubject: 'others' as const,
     imageCharacterId: 'mira-voss',
   }
+
+  const deterministicChoiceTurns: NonNullable<StoryCartridge['deterministicChoiceTurns']> = [
+    {
+      action: s('帮媛夕把木箱送上月线', 'Help Mira load the crate onto the Moonline'),
+      when: { locations: [s('灯湾码头', 'Lantern Quay')], characterIds: ['mira-voss'], jobs: [{ id: 'mira-seed-crate', statuses: ['offered', 'accepted'] }] },
+      turn: { match: [], content: transit, imagePrompt: 'inside a warm Moonline carriage leaving Lantern Quay, rain-bright city lights outside, one secured seed crate and two separate seats, environmental transition with people only as small silhouettes, no text, no UI, 4:3', imageSubject: 'environment' },
+    },
+    { action: s('陪媛夕坐到银叶葡萄丘', 'Ride with Mira to Silverleaf Vineyard'), when: { locations: [s('月线车厢', 'Moonline Carriage')], characterIds: ['mira-voss'] }, turn: { match: [], content: reunion, imagePrompt: 'Silverleaf Vineyard after rain, medium shot of one adult botanist waiting beside two stools between moon-turning vines, same short asymmetrical deep-brown bob, narrow copper hairpin above right ear, sage jacket and copper pendant, player off-camera, no text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'mira-voss' } },
+    { action: s('坐到媛夕对面的空凳上', 'Sit on the empty stool across from Mira'), when: { locations: [s('银叶葡萄丘', 'Silverleaf Vineyard')], characterIds: ['mira-voss'] }, turn: v1Outcomes[0] },
+    { action: s('答应清晨和媛夕一起调查葡萄藤', "Join Mira's dawn vine survey"), when: { locations: [s('银叶葡萄丘', 'Silverleaf Vineyard')], characterIds: ['mira-voss'] }, turn: v1Outcomes[1] },
+    { action: s('帮罗温把泡皱的地图压平', 'Help Rowan flatten the buckled map'), when: { locations: [s('灯湾码头', 'Lantern Quay')], characterIds: ['rowan-hale'] }, turn: v1Turns[1] },
+    { action: s('和罗温把地图送去远灯研修院', 'Deliver the map to Far Lantern Institute with Rowan'), when: { locations: [s('灯湾码头', 'Lantern Quay')], characterIds: ['rowan-hale'] }, turn: v1Turns[2] },
+    { action: s('和罗温谈谈那张缺失的海岸线', 'Ask Rowan about the missing stretch of coast'), when: { locations: [s('月线车厢', 'Moonline Carriage')], characterIds: ['rowan-hale'] }, turn: v1Turns[3] },
+    { action: s('请罗温介绍修窑门的工作', 'Ask Rowan to introduce the kiln-door job'), when: { locations: [s('远灯研修院', 'Far Lantern Institute')], characterIds: ['rowan-hale'] }, turn: v1Outcomes[2] },
+    { action: s('答应明早和罗温检查通往雾杉林的旧支线', "Join Rowan's morning inspection of the Mistpine branch"), when: { locations: [s('远灯研修院', 'Far Lantern Institute')], characterIds: ['rowan-hale'] }, turn: v1Outcomes[3] },
+    { action: s('帮塞莱斯特把折叠椅也摆好', 'Help Celeste arrange the folding chairs'), when: { locations: [s('杯影夜市', 'Cupshadow Market')], characterIds: ['celeste-ardin'] }, turn: v1Turns[5] },
+    { action: s('和塞莱斯特去潮汐群岛', 'Take the Moonline to the Tidal Islands with Celeste'), when: { locations: [s('杯影夜市', 'Cupshadow Market')], characterIds: ['celeste-ardin'] }, turn: v1Turns[6] },
+    { action: s('问塞莱斯特那场清晨演出唱给谁听', 'Ask who the dawn concert is for'), when: { locations: [s('月线车厢', 'Moonline Carriage')], characterIds: ['celeste-ardin'] }, turn: v1Turns[7] },
+    { action: s('帮塞莱斯特试场', 'Help Celeste check the dawn performance space'), when: { locations: [s('潮汐群岛', 'Tidal Islands')], characterIds: ['celeste-ardin'] }, turn: v1Outcomes[4] },
+    { action: s('接受塞莱斯特下一站的布台工作', "Take Celeste's staging job at the next market"), when: { locations: [s('潮汐群岛', 'Tidal Islands')], characterIds: ['celeste-ardin'] }, turn: v1Outcomes[5] },
+  ]
 
   return {
     schemaVersion: 1, id: 'wanderlight', locale, coverImage, entryImage,
@@ -254,13 +276,14 @@ function make(locale: Locale): StoryCartridge {
     characters: cast(locale),
     initialMap: worldMap(locale),
     initialInventory: [{ id: 'moonline-passbook', label: s('月线通行册', 'Moonline Passbook'), count: 1, rarity: 'rare', detail: s('蓝灰布封面的小册，夹着三枚无字银色印章。', 'A blue-gray cloth passbook holding three unlettered silver stamps.'), effect: s('每枚印章可为已发现路线换一次停运后的夜班席位。', 'Each stamp secures one after-hours seat on a discovered route.'), lore: s('灯湾月线给临时工作人员的旧式凭证。', 'An old credential issued to temporary Moonline workers.'), metrics: [{ id: 'stamps', label: s('剩余印章', 'Stamps remaining'), value: '3 / 3' }], imagePrompt: 'single blue-gray cloth railway passbook and EXACTLY THREE completely blank featureless silver circular stamp tokens arranged as one token above two tokens below; count 3 total, never 2 or 4; no marks or embossing on any token or cover, painted indigo cloth and pale station stone, object only, no hands, no text, no letters, no numbers, no symbols, square' }],
+    deterministicChoiceTurns,
     demoTurns: [
       miraOpeningTurn,
       { match: zh ? ['送上月线', '月线'] : ['Moonline', 'load'], content: transit, imagePrompt: 'inside a warm Moonline carriage leaving Lantern Quay, rain-bright city lights outside, one secured seed crate and two separate seats, environmental transition with people only as small silhouettes, no text, no UI, 4:3', imageSubject: 'environment' },
       { match: zh ? ['葡萄丘', '陪媛夕'] : ['Silverleaf', 'ride with Mira'], content: reunion, imagePrompt: 'Silverleaf Vineyard after rain, medium shot of one adult botanist waiting beside two stools between moon-turning vines, same short asymmetrical deep-brown bob, narrow copper hairpin above right ear, sage jacket and copper pendant, player off-camera, no text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'mira-voss' },
       { match: zh ? ['剪枝', '葡萄行', '找'] : ['pruning shears', 'vine rows', 'follow'], content: dynamicDebut, imagePrompt: 'Silverleaf Vineyard at night, formal first identity anchor of one adult trellis repairer beside a rain-bent vine, jaw-length deep-golden curls, narrow brass leaf clip at left temple, stone-blue cape, no other readable face, no text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'talin-rey' },
       ...v1Turns,
-      ...wanderlightV1Outcomes(locale),
+      ...v1Outcomes,
     ],
   }
 }
