@@ -159,7 +159,7 @@ function ConversationHeader({ cartridge, engine, audio, openWorld, textSize, set
           onClick={audio.toggle}
           disabled={!audio.supported}
         ><Icon name={audioActive ? 'volume' : 'volumeOff'} /></button>
-        <button className="st-world-button st-world-button--relations" onClick={() => openWorld('party')} aria-label={t(cartridge.locale, 'world')} title={t(cartridge.locale, 'world')}><Icon name="folio" /><span>{t(cartridge.locale, 'relationshipShortcut')}</span></button>
+        <button className="st-world-button" onClick={() => openWorld('party')} aria-label={t(cartridge.locale, 'world')} title={t(cartridge.locale, 'world')}><Icon name="folio" /></button>
       </div>
     </div>
     <div className="st-chat-stats" aria-label={t(cartridge.locale, 'stats')}>
