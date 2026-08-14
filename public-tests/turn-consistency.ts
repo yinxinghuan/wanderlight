@@ -1,12 +1,20 @@
 import { listCartridges } from '../src/story/cartridges/index'
 import { decodeChoiceRecord, encodeChoiceRecord } from '../src/story/engine/choiceInput'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
-import { applyConsistencyRecovery, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery } from '../src/story/engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
 import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
+import { t } from '../src/story/i18n'
 
 function ok(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 function equal(actual: unknown, expected: unknown, message: string) { if (actual !== expected) throw new Error(`${message}: ${String(actual)} !== ${String(expected)}`) }
+function createLoopChoices(scene: number, first: string, second: string) {
+  return [
+    { id: `recovery-${scene}-0`, label: first },
+    { id: `recovery-${scene}-1`, label: second },
+    { id: `recovery-${scene}-2`, label: '暂缓这一步，留在灯湾码头观察局势' },
+  ]
+}
 
 const cartridge = listCartridges('zh')[0]
 const initial = createInitialSave(cartridge)
@@ -60,6 +68,26 @@ ok(playableRecovery.blocks.some((block) => block.id === `consistency-recovery-${
 ok(!playableRecovery.choices.some((choice) => choice.label.includes(initial.objective)), 'consistency recovery cannot route through a stale objective')
 ok(!playableRecovery.blocks.some((block) => /一致性检查|未写入存档|请重试/.test(block.text)), 'technical validation errors are not exposed to players')
 
+const confirmAction = playableRecovery.choices[1].label
+const confirmSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, confirmAction)
+equal(confirmSelection?.mode, 'confirm', 'the confirmation branch is recognized as a local recovery exit')
+const confirmed = applyConsistencyRecoverySelection(playableRecovery, cartridge, confirmAction, confirmSelection!)
+equal(confirmed.choices[0]?.label, '尝试一个未通过一致性校验的行动', 'confirmation keeps the original action available for an explicit retry')
+equal(new Set(confirmed.choices.map((choice) => choice.label)).size, confirmed.choices.length, 'confirmation exits with unique choices')
+ok(confirmed.blocks.some((block) => block.data?.consistencyRecoveryExit === 'confirm'), 'confirmation commits a local explanatory turn')
+ok(!confirmed.blocks.some((block) => block.id === `consistency-recovery-${confirmed.scene}`), 'confirmation does not call the model or create another recovery loop')
+
+const pauseAction = playableRecovery.choices[2].label
+const pauseSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction)
+equal(pauseSelection?.mode, 'pause', 'the pause branch is recognized as a local recovery exit')
+const paused = applyConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction, pauseSelection!)
+equal(new Set(paused.choices.map((choice) => choice.label)).size, paused.choices.length, 'pause exits with unique choices')
+ok(!paused.choices.some((choice) => /确认与这一步|暂缓这一步|查看.+现在能做的事|放弃原计划/.test(choice.label)), 'pause leaves the synthetic recovery menu behind')
+
+const nestedRecovery = applyConsistencyRecovery(playableRecovery, cartridge, confirmAction)
+equal(nestedRecovery.choices[0]?.label, '尝试一个未通过一致性校验的行动', 'a repeated consistency failure unwinds to the original action')
+equal(new Set(nestedRecovery.choices.map((choice) => choice.label)).size, 3, 'a nested recovery cannot duplicate its first two choices')
+
 const legacyRecoveryAction = '前往杯影夜市观察夏琳和她的手下'
 const legacyRecoveryChoices = [
   { id: 'recovery-6-0', label: '观察灯湾码头的新变化' },
@@ -89,6 +117,29 @@ equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'c
 equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-5')?.text ?? '')[0], '询问男子关于短发女人的更多细节', 'earlier visible recovery choices migrate with the latest turn')
 equal(repairedRecovery.objective, legacyRecoveryAction, 'an objective polluted by the old action fallback is realigned to the latest intent')
 equal(repairLegacyConsistencyRecovery(repairedRecovery, cartridge).choices[0]?.label, legacyRecoveryAction, 'legacy recovery migration is idempotent')
+
+const screenshotOriginalAction = '留在码头接受搬运工作'
+const screenshotConfirmAction = '先在灯湾码头确认与这一步有关的路线和线索'
+const screenshotLoop = {
+  ...initial,
+  scene: 2,
+  lastActionId: screenshotConfirmAction,
+  blocks: [
+    ...initial.blocks,
+    { id: 'action-1', kind: 'event' as const, text: screenshotOriginalAction },
+    { id: 'consistency-recovery-1', kind: 'narration' as const, text: t(cartridge.locale, 'consistencyRecovery', { name: initial.location, action: screenshotOriginalAction }) },
+    { id: 'choices-1', kind: 'choices' as const, text: encodeChoiceRecord(createLoopChoices(1, screenshotOriginalAction, screenshotConfirmAction)) },
+    { id: 'action-2', kind: 'event' as const, text: screenshotConfirmAction },
+    { id: 'consistency-recovery-2', kind: 'narration' as const, text: t(cartridge.locale, 'consistencyRecovery', { name: initial.location, action: screenshotConfirmAction }) },
+    { id: 'choices-2', kind: 'choices' as const, text: encodeChoiceRecord(createLoopChoices(2, screenshotConfirmAction, screenshotConfirmAction)) },
+  ],
+  choices: createLoopChoices(2, screenshotConfirmAction, screenshotConfirmAction),
+}
+const repairedScreenshotLoop = repairLegacyConsistencyRecovery(screenshotLoop, cartridge)
+equal(repairedScreenshotLoop.choices[0]?.label, screenshotOriginalAction, 'the shipped duplicate recovery save migrates back to the original action')
+equal(new Set(repairedScreenshotLoop.choices.map((choice) => choice.label)).size, 3, 'the shipped duplicate recovery save receives three unique options')
+const migratedConfirm = resolveConsistencyRecoverySelection(repairedScreenshotLoop, cartridge, repairedScreenshotLoop.choices[1].label)
+equal(migratedConfirm?.originalAction, screenshotOriginalAction, 'the migrated local exit still remembers the original action')
 
 const valid = parseStoryProtocol(`你先回到月线车厢。列车停稳后，你在雾杉林下车，护林人林薇请你参加今晚的巡逻任务。
 [map_update: new_location="雾杉林" connected_to="月线车厢" detail="夜间巡逻开始前的林灯栈道"]
@@ -137,4 +188,4 @@ ok(String(upgradedImage?.data?.prompt ?? '').includes('雾杉林'), 'regenerated
 ok(!String(upgradedImage?.data?.prompt ?? '').includes('old quay prompt'), 'old location prompt cannot survive migration')
 equal(repairKnownForestSceneDivergence(repaired, cartridge).location, '雾杉林', 'known screenshot migration is idempotent')
 
-console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'ordinary-action-not-objective', 'unbound-image-discarded', 'action-aligned-consistency-recovery', 'legacy-recovery-repaired', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))
+console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'ordinary-action-not-objective', 'unbound-image-discarded', 'action-aligned-consistency-recovery', 'local-confirm-exit', 'local-pause-exit', 'nested-recovery-unwound', 'legacy-recovery-repaired', 'screenshot-loop-migrated', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))
