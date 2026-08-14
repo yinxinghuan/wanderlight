@@ -2,7 +2,7 @@ import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVis
 import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
 import { createInitialDangerState, normalizeDangerState, settleDangerTurn } from './dangerDirector'
-import { authoredDecisionContext, choicesAreGrounded, createTransitionBlock } from './continuity'
+import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
 import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
 
@@ -286,15 +286,15 @@ export function createRecoveryChoices(save: Pick<StorySave, 'scene' | 'location'
   const labels = cartridge.locale === 'zh'
     ? [
         `观察${location || '周围'}的新变化`,
-        objective ? `追查“${objective}”的线索` : '检查与刚才行动有关的线索',
-        hasParty ? '和同行者商量下一步' : '换一种方式处理当前局面',
+        ...(objective ? [`追查“${objective}”的线索`] : []),
+        ...(hasParty ? ['和同行者商量下一步'] : []),
       ]
     : [
         `Observe what changed around ${location || 'this place'}`,
-        objective ? `Trace a clue about “${objective}”` : 'Inspect clues connected to the last action',
-        hasParty ? 'Discuss the next move with your companions' : 'Try another approach to the current situation',
+        ...(objective ? [`Trace a clue about “${objective}”`] : []),
+        ...(hasParty ? ['Discuss the next move with your companions'] : []),
       ]
-  return labels.map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
+  return [...new Set(labels)].map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
 }
 
 function createActionRecoveryChoices(
@@ -376,10 +376,10 @@ export function applyConsistencyRecoverySelection(
   const choices = selection.mode === 'confirm' && selection.originalAction
     ? [
         { id: `recovery-exit-${scene}-0`, label: selection.originalAction },
-        ...generic.filter((choice) => choice.label !== selection.originalAction).slice(0, 2)
+        ...generic.filter((choice) => choice.label !== selection.originalAction)
       ]
     : generic.map((choice, index) => ({ ...choice, id: `recovery-exit-${scene}-${index}` }))
-  const uniqueChoices = choices.filter((choice, index, all) => all.findIndex((entry) => entry.label === choice.label) === index).slice(0, 3)
+  const uniqueChoices = choices.filter((choice, index, all) => all.findIndex((entry) => entry.label === choice.label) === index).slice(0, 5)
   return {
     ...save,
     scene,
@@ -511,8 +511,10 @@ export function repairLegacyConsistencyRecovery<T extends {
 }
 
 function validChoiceLabels(labels: string[]): string[] {
-  const clean = labels.map((label) => label.trim()).filter((label) => label.length >= 2 && label.length <= 96)
-  return clean.length >= 2 && clean.length <= 5 && new Set(clean).size === clean.length ? clean : []
+  const seen = new Set<string>()
+  return labels.map((label) => label.trim())
+    .filter((label) => label.length >= 2 && label.length <= 96 && !seen.has(label) && Boolean(seen.add(label)))
+    .slice(0, 5)
 }
 
 function cleanInferredItemLabel(value: string): string {
@@ -737,8 +739,10 @@ export function applyParsedScene(
   // Ordinary scenes must remain playable even when an AI response omits or
   // truncates its machine-readable choices. A real checkpoint may still use
   // the dedicated resume action supplied by the Composer.
-  if (!next.sessionEnded && next.choices.length >= 2 && !choicesAreGrounded(next.choices, { ...next, choices: save.choices, blocks: [...next.blocks, ...effects] }, cartridge)) next.choices = []
-  if (!next.sessionEnded && next.choices.length < 2) next.choices = createRecoveryChoices(next, cartridge)
+  if (!next.sessionEnded && next.choices.length) {
+    next.choices = filterGroundedChoices(next.choices, { ...next, blocks: [...next.blocks, ...effects] }, cartridge)
+  }
+  if (!next.sessionEnded && next.choices.length === 0) next.choices = createRecoveryChoices(next, cartridge)
 
   const floor = activeStatFloorRule(next, cartridge)
   if (!next.sessionEnded && floor) {

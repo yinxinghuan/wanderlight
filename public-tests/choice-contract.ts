@@ -33,4 +33,14 @@ equal(resolveNumberedChoiceInput('1', next.choices), next.choices[0].label, '1 s
 equal(resolveNumberedChoiceInput('02', next.choices), next.choices[1].label, '02 selects current action 02')
 equal(resolveNumberedChoiceInput('自己问问乘务员', next.choices), '自己问问乘务员', 'free text remains free text')
 
-console.log(JSON.stringify({ ok: true, checks: ['visible-choice-precedence', 'article-tray-single-source', 'numbered-input', 'free-input'] }))
+const single = parseStoryProtocol(`钟声响起，眼下只有一条已确认的通道。
+[choices: "沿已确认的通道前进"]`, 'zh')
+const singleNext = applyParsedScene(initial, single, cartridge, '检查通道')
+equal(singleNext.choices.length, 1, 'one valid choice is displayed without padding')
+
+const five = parseStoryProtocol(`公告牌列出了五个都能立即办理的码头事项：查看航班、检查码头、等待月线、询问工作和返回月台。
+[choices: "查看航班"|"检查码头"|"等待月线"|"询问工作"|"返回月台"]`, 'zh')
+const fiveNext = applyParsedScene(initial, five, cartridge, '查看公告牌')
+equal(fiveNext.choices.length, 5, 'five grounded choices remain available instead of being truncated to three')
+
+console.log(JSON.stringify({ ok: true, checks: ['visible-choice-precedence', 'article-tray-single-source', 'numbered-input', 'free-input', 'single-choice-no-padding', 'five-choice-support'] }))

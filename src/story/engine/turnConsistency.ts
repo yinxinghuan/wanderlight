@@ -1,4 +1,5 @@
 import { encodeChoiceRecord } from './choiceInput'
+import { filterGroundedChoices } from './continuity'
 import type { ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
 
 function clean(value: string): string {
@@ -79,6 +80,29 @@ export function canonicalizeTurnMetadata(
     })
   }
 
+  let choiceIndex = -1
+  commands.forEach((command, index) => { if (command.type === 'choices') choiceIndex = index })
+  if (choiceIndex >= 0) {
+    const command = commands[choiceIndex]
+    if (command.type === 'choices') {
+      const seen = new Set<string>()
+      const candidates = command.choices
+        .map((label) => label.trim())
+        .filter((label) => label.length >= 2 && label.length <= 96 && !seen.has(label) && Boolean(seen.add(label)))
+        .filter((label) => !stalePlaceChoice(label, location, save))
+        .slice(0, 5)
+        .map((label, index) => ({ id: `candidate-${index}`, label }))
+      const grounded = filterGroundedChoices(candidates, {
+        ...save,
+        location,
+        blocks: [...save.blocks, ...parsed.blocks],
+      }, cartridge).map((choice) => choice.label)
+      if (grounded.length !== command.choices.length || grounded.some((label, index) => label !== command.choices[index])) {
+        commands = commands.map((entry, index) => index === choiceIndex ? { type: 'choices' as const, choices: grounded } : entry)
+      }
+    }
+  }
+
   return { parsed: commands === parsed.commands ? parsed : { ...parsed, commands }, imagePrompt: safeImagePrompt, discardedImage }
 }
 
@@ -86,7 +110,7 @@ function validChoices(parsed: ParsedScene): string[] {
   const command = [...parsed.commands].reverse().find((entry) => entry.type === 'choices')
   if (command?.type !== 'choices') return []
   const labels = command.choices.map((label) => label.trim()).filter((label) => label.length >= 2 && label.length <= 96)
-  return labels.length >= 2 && labels.length <= 5 && new Set(labels).size === labels.length ? labels : []
+  return labels.length >= 1 && labels.length <= 5 && new Set(labels).size === labels.length ? labels : []
 }
 
 function stalePlaceChoice(choice: string, location: string, save: StorySave): boolean {

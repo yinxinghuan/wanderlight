@@ -94,21 +94,21 @@ function extractNaturalChoices(source: string): { prose: string; choices: string
     choiceIndexes.unshift(cursor)
     cursor -= 1
   }
-  if (choices.length < 2) {
+  if (choices.length < 1) {
     choices.length = 0
     choiceIndexes.length = 0
     const cue = /^(?:你准备|准备采取的行动|可选行动|your actions?|you prepare|options?)\s*[：:]\s*$/i
     const cueIndex = [...nonEmptyIndexes].reverse().find((index) => cue.test(lines[index].trim()))
     const tailIndexes = cueIndex == null ? [] : nonEmptyIndexes.filter((index) => index > cueIndex)
     const beginsLikeBareAction = /^(?:跟随|观察|询问|陪同|开始|继续|前往|返回|留下|等待|检查|调查|搜索|告诉|帮助|拒绝|接受|进入|使用|带|把|让|与|尝试|绕|登|走|停|休息|follow|observe|ask|accompany|begin|start|continue|go|return|stay|wait|inspect|investigate|search|tell|help|refuse|accept|enter|use|take|try|walk|leave)/i
-    if (cueIndex != null && tailIndexes.length >= 2 && tailIndexes.length <= 5 && tailIndexes.every((index) => {
+    if (cueIndex != null && tailIndexes.length >= 1 && tailIndexes.length <= 5 && tailIndexes.every((index) => {
       const value = lines[index].trim()
       return value.length >= 2 && value.length <= 96 && beginsLikeBareAction.test(value)
     })) {
       tailIndexes.forEach((index) => { choices.push(lines[index].trim()); choiceIndexes.push(index) })
     }
   }
-  if (choices.length < 2 || choices.length > 5 || new Set(choices).size !== choices.length) return { prose: source, choices: [] }
+  if (choices.length < 1 || choices.length > 5 || new Set(choices).size !== choices.length) return { prose: source, choices: [] }
   const previous = lines.slice(0, choiceIndexes[0]).reverse().find((line) => line.trim())?.trim() ?? ''
   const hasChoiceCue = /(?:你(?:现在)?可以|你准备|准备采取的行动|可选行动|可选择|选项|下一步|接下来|决定|打算|choose|choice|options?|next|you can|what (?:will|do) you)/i.test(previous)
   const beginsLikeAction = /^(?:先|去|前往|沿|循|跟随|返回|留下|等待|观察|检查|调查|搜索|询问|告诉|帮助|拒绝|接受|进入|使用|带|把|让|与|继续|尝试|绕|登|走|停|休息|follow|ask|return|stay|wait|watch|inspect|investigate|search|tell|help|refuse|accept|enter|use|take|continue|try|climb|walk|go|leave)/i

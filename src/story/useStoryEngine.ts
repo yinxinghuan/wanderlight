@@ -69,7 +69,7 @@ function recoverPersistedChoices(candidate: LegacyStorySave, cartridge: StoryCar
   const tail = candidate.blocks.slice(lastActionIndex + 1).filter((block) => block.kind !== 'image' && block.kind !== 'choices').map((block) => block.text).join('\n')
   const parsed = parseStoryProtocol(tail, candidate.locale ?? cartridge.locale)
   const recovered = parsed.commands.find((command) => command.type === 'choices')
-  if (!recovered || recovered.type !== 'choices' || recovered.choices.length < 2) return candidate
+  if (!recovered || recovered.type !== 'choices' || recovered.choices.length < 1) return candidate
   const labels = new Set(recovered.choices)
   const optionLine = /^\s*(?:(?:选项|选择|行动)\s*[一二三四五\dA-Ea-e]+\s*[：:.、)]|(?:\d{1,2}|[A-Ea-e]|[一二三四五])\s*[.、:：)]|[①②③④⑤]|[-*•])\s*(.+?)\s*$/
   const blocks = candidate.blocks.filter((block, index) => {
@@ -132,7 +132,7 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     danger: normalizeDangerState(repaired.danger), jobs: (repaired.jobs ?? []).map((job) => ({ ...job })),
     facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
   } as StorySave
-  if (!normalized.sessionEnded && normalized.choices.length < 2) normalized.choices = createRecoveryChoices(normalized, cartridge)
+  if (!normalized.sessionEnded && normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
   const floor = activeStatFloorRule(normalized, cartridge)
   if (!normalized.sessionEnded && floor) {
     normalized.choices = statFloorChoices(normalized, cartridge) ?? normalized.choices

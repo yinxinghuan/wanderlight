@@ -40,8 +40,8 @@ export function createTransitionBlock(
 
 function chineseTerms(value: string): string[] {
   const stripped = value
-    .replace(/^(?:先|去|前往|沿着?|循着?|跟随|返回|回到|留下|等待|观察|查看|检查|调查|搜索|询问|告诉|帮助|拒绝|接受|进入|使用|带着?|把|让|与|继续|尝试|绕到?|登上|走向|停下|休息|坐到?|决定|选择)+/u, '')
-    .replace(/(?:一下|一遍|下一步|当前|现在|这里|那里|周围|情况|局面|方式|事情|行动|线索|变化|继续|再说|商量)/gu, '')
+    .replace(/^(?:先|去|前往|沿着?|循着?|跟随|返回|回到|留下|留在|等待|观察|查看|检查|调查|搜索|询问|告诉|帮助|拒绝|接受|进入|使用|带着?|把|让|与|继续|尝试|绕到?|登上|走向|停下|休息|坐到?|决定|选择)+/u, '')
+    .replace(/(?:一下|一遍|下一步|当前|现在|原地|这里|那里|周围|情况|局面|方式|事情|行动|线索|变化|继续|等待|再说|商量)/gu, '')
   const terms = new Set<string>()
   for (const chunk of stripped.match(/[\u3400-\u9fff]{2,}/gu) ?? []) {
     if (chunk.length <= 6) terms.add(chunk)
@@ -62,14 +62,17 @@ function choiceIsGrounded(choice: Choice, source: string, locale: StoryCartridge
   return terms.some((term) => normalizedSource.includes(clean(term)))
 }
 
-export function choicesAreGrounded(choices: Choice[], save: StorySave, cartridge: StoryCartridge): boolean {
+export function filterGroundedChoices(choices: Choice[], save: StorySave, cartridge: StoryCartridge): Choice[] {
   const visibleHistory = save.blocks
     .filter((block) => block.kind !== 'image' && !block.id.startsWith('action-'))
     .map((block) => `${block.speaker ?? ''} ${block.text}`)
   const knownPeople = save.characters.filter((character) => character.status !== 'departed').map((character) => character.name)
   const knownPlaces = save.map.filter((node) => node.visited || node.current).map((node) => node.label)
   const knownItems = save.inventory.map((item) => item.label)
-  const priorChoices = save.choices.map((choice) => choice.label)
-  const source = [...visibleHistory, ...priorChoices, save.location, save.objective, ...knownPeople, ...knownPlaces, ...knownItems].join(' ')
-  return choices.every((choice) => choiceIsGrounded(choice, source, cartridge.locale))
+  const source = [...visibleHistory, save.location, save.objective, ...knownPeople, ...knownPlaces, ...knownItems].join(' ')
+  return choices.filter((choice) => choiceIsGrounded(choice, source, cartridge.locale))
+}
+
+export function choicesAreGrounded(choices: Choice[], save: StorySave, cartridge: StoryCartridge): boolean {
+  return filterGroundedChoices(choices, save, cartridge).length === choices.length
 }

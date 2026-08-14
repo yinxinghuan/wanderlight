@@ -76,6 +76,17 @@ equal(confirmed.choices[0]?.label, '尝试一个未通过一致性校验的行�
 equal(new Set(confirmed.choices.map((choice) => choice.label)).size, confirmed.choices.length, 'confirmation exits with unique choices')
 ok(confirmed.blocks.some((block) => block.data?.consistencyRecoveryExit === 'confirm'), 'confirmation commits a local explanatory turn')
 ok(!confirmed.blocks.some((block) => block.id === `consistency-recovery-${confirmed.scene}`), 'confirmation does not call the model or create another recovery loop')
+const recoveryWithParty = {
+  ...playableRecovery,
+  objective: '确认今晚的工作路线',
+  characters: [...playableRecovery.characters, {
+    id: 'qa-companion', name: '测试同伴', role: '向导', vitality: 80, stress: 0, skills: [],
+    status: 'companion' as const, origin: 'generated' as const, updatedAtScene: playableRecovery.scene, joinedAtScene: playableRecovery.scene,
+  }],
+  partyMemberIds: [...playableRecovery.partyMemberIds, 'qa-companion'],
+}
+const confirmedWithParty = applyConsistencyRecoverySelection(recoveryWithParty, cartridge, confirmAction, confirmSelection!)
+equal(confirmedWithParty.choices.length, 4, 'a retry plus three grounded recovery exits are not truncated to three')
 
 const pauseAction = playableRecovery.choices[2].label
 const pauseSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction)
@@ -149,11 +160,26 @@ const valid = parseStoryProtocol(`你先回到月线车厢。列车停稳后，�
 [image_location: location="雾杉林"]`, 'zh')
 equal(validateTurnConsistency(initial, valid, cartridge, 'Mistpine Forest ranger patrol at night').length, 0, 'valid aligned turn')
 
-const stale = parseStoryProtocol(`你在雾杉林的林灯下停步。
+const stale = parseStoryProtocol(`你在雾杉林的林灯下停步，护林人林薇请你选择今晚的巡逻方式。
 [map_update: new_location="雾杉林" connected_to="月线车厢"]
 [scene_location: location="雾杉林"]
 [choices: "观察灯湾码头的新变化"|"跟随护林人巡逻"|"询问林薇今晚的路线"]`, 'zh')
 ok(validateTurnConsistency(initial, stale, cartridge).includes('choices.cannot_act_in_stale_location'), 'an action located in the old scene is rejected')
+const filteredStale = canonicalizeTurnMetadata(initial, stale, cartridge)
+const filteredStaleChoices = filteredStale.parsed.commands.find((command) => command.type === 'choices')
+ok(filteredStaleChoices?.type === 'choices', 'mixed choice set remains actionable after filtering')
+equal(filteredStaleChoices.choices.length, 2, 'only the impossible old-location choice is removed')
+ok(!filteredStaleChoices.choices.some((choice) => choice.includes('灯湾码头')), 'known dead-end choice never reaches the tray')
+equal(validateTurnConsistency(initial, filteredStale.parsed, cartridge).length, 0, 'remaining valid choices commit without forcing a three-choice quota')
+
+const hiddenNoun = parseStoryProtocol(`你在灯湾码头查看当前的航班。
+[scene_location: location="灯湾码头"]
+[choices: "继续查看当前航班"|"询问尚未登场的森林王后"|"留在原地等待"|"检查码头时刻表"]`, 'zh')
+const filteredHiddenNoun = canonicalizeTurnMetadata(initial, hiddenNoun, cartridge)
+const hiddenNounChoices = filteredHiddenNoun.parsed.commands.find((command) => command.type === 'choices')
+ok(hiddenNounChoices?.type === 'choices', 'grounded subset remains available')
+equal(hiddenNounChoices.choices.length, 3, 'one unintroduced-noun dead end is filtered from a four-choice set')
+ok(!hiddenNounChoices.choices.some((choice) => choice.includes('森林王后')), 'an unintroduced character cannot survive choice filtering')
 
 const legacyChoices = [
   { id: 'old-0', label: '观察灯湾码头的新变化' },
@@ -188,4 +214,4 @@ ok(String(upgradedImage?.data?.prompt ?? '').includes('雾杉林'), 'regenerated
 ok(!String(upgradedImage?.data?.prompt ?? '').includes('old quay prompt'), 'old location prompt cannot survive migration')
 equal(repairKnownForestSceneDivergence(repaired, cartridge).location, '雾杉林', 'known screenshot migration is idempotent')
 
-console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'ordinary-action-not-objective', 'unbound-image-discarded', 'action-aligned-consistency-recovery', 'local-confirm-exit', 'local-pause-exit', 'nested-recovery-unwound', 'legacy-recovery-repaired', 'screenshot-loop-migrated', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))
+console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'ordinary-action-not-objective', 'unbound-image-discarded', 'action-aligned-consistency-recovery', 'local-confirm-exit', 'recovery-fourth-choice-preserved', 'local-pause-exit', 'nested-recovery-unwound', 'legacy-recovery-repaired', 'screenshot-loop-migrated', 'dead-choice-filtered-without-quota', 'hidden-noun-choice-filtered', 'known-save-repaired', 'old-image-prompt-removed'] }))

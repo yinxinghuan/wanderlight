@@ -24,7 +24,7 @@ Fixed world rules that you must preserve:
 ${director.fixedWorldRules.map((rule) => `- ${rule}`).join('\n')}
 Generation rules:
 ${director.generationRules.map((rule) => `- ${rule}`).join('\n')}
-The three suggested choices should cover these distinct intents when the situation allows: ${director.choiceIntents.join(' / ')}.
+Suggested choices should cover these distinct intents when the situation allows: ${director.choiceIntents.join(' / ')}. Never add a filler choice merely to reach a target count.
 Keep at most ${director.maxActiveThreads} unresolved threads prominent; older threads remain in history but should not all compete for attention.
 The player may attempt any plausible in-world action, even if it was not one of your choices. Judge it from the world state instead of refusing or forcing the previous route.` : ''
   const dangerContract = dangerDirectiveContract(context.dangerDirective)
@@ -42,7 +42,7 @@ CHOICE GROUNDING IS A HARD RULE: every person, place, object, institution, and i
 LOCATION CONTINUITY IS A HARD RULE: before any map_update changes the location, visibly close the previous place and pass through this recurring journey anchor: ${context.cartridge.transitionAnchor ?? 'the current route record'}. Only then narrate arrival. Never cut directly from one world, district, chapter, or time period into another.
 TURN CONSISTENCY IS A HARD RULE: every response must emit exactly one [scene_location: location="Exact current visible location label"] matching authoritative state after any map_update. If the player visibly arrives somewhere new, emit map_update in the same response. When the prose establishes a new current task, emit [state: value="Exact current objective"]. Never leave choices or state anchored to the previous place.
 IMPORTANT DIALOGUE IS IMAGE-WORTHY REGARDLESS OF WHO SPEAKS: when a line reveals a consequential fact, changes a relationship, sets a boundary, makes a promise or request, warns of danger, establishes a task, or carries a strong emotional turn, emit [dialogue_focus] for that speaker and expression. Short administrative acknowledgements do not qualify. The local director will force a contextual expression shot and may override a generic environment proposal.
-Finish every response, including a session_end checkpoint, with exactly three distinct actionable choices.
+Finish every response, including a session_end checkpoint, with one to five distinct choices that are all executable from the established state. The count is not a quota: return only the valid choices, even when that means one or two.
 Put those choices only in the final [choices: ...] command. Never repeat them as bullets, a numbered list, or a visible “you can / 你现在可以” paragraph.
 Every response must advance at least one trackable fact: situation, time, location, stat, inventory, relationship, or objective. Atmosphere alone is not progress.
 STATE DISPLAY IS ENGINE-OWNED: never print a status-update heading or a list of current values, locations, roles, objectives, or inventory in visible prose. Describe consequences naturally and submit numeric changes through widget commands, except paid-work settlement which uses the authoritative job command; the interface will render the delta.
@@ -57,7 +57,7 @@ ${dangerContract}
 ${domainContract}
 
 Allowed protocol commands, each on its own line:
-[choices: "Choice one"|"Choice two"|"Choice three"]
+[choices: "One valid choice"|"Optional second choice"|"Optional further choices, up to five"]
 [situation: "One concise shared premise for the choices"]
 [widget: id, value: NUMBER]
 [skill_check: skill="Name" dc="NUMBER" rolls="NUMBER" modifier="NUMBER" total="NUMBER" result="critical-success|success|costly-success|failure|critical-failure"]
