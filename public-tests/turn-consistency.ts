@@ -3,7 +3,7 @@ import { decodeChoiceRecord } from '../src/story/engine/choiceInput'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { createImageBlock, createInitialSave } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
-import { repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
+import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
 
 function ok(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 function equal(actual: unknown, expected: unknown, message: string) { if (actual !== expected) throw new Error(`${message}: ${String(actual)} !== ${String(expected)}`) }
@@ -27,7 +27,26 @@ ok(!recovered.blocks.some((block) => /你准备|跟随护林人开始巡逻/.tes
 const screenshotViolations = validateTurnConsistency(initial, recovered, cartridge, 'old quay image prompt')
 ok(screenshotViolations.includes('turn.requires_one_scene_location'), 'missing scene location is rejected')
 ok(screenshotViolations.includes('image.requires_one_image_location'), 'image without bound location is rejected')
-ok(screenshotViolations.includes('turn.new_task_requires_objective_state'), 'new task without objective state is rejected')
+ok(!screenshotViolations.includes('turn.new_task_requires_objective_state'), 'mentioning an existing tonight task is not a new objective')
+
+const explicitNewTask = parseStoryProtocol(`莉莎把货单交给你。你接下了搬运货物的任务。
+[scene_location: location="灯湾码头"]
+[choices: "搬第一只箱子"|"先检查货单"|"询问搬运路线"]`, 'zh')
+ok(validateTurnConsistency(initial, explicitNewTask, cartridge).includes('turn.new_task_requires_objective_state'), 'an explicitly accepted new task still requires objective state')
+const canonicalTask = canonicalizeTurnMetadata(initial, explicitNewTask, cartridge, undefined, '答应帮莉莎搬运货物')
+equal(validateTurnConsistency(initial, canonicalTask.parsed, cartridge).length, 0, 'a visible accepted task receives a local objective command')
+ok(canonicalTask.parsed.commands.some((command) => command.type === 'state' && /搬运货物/.test(command.value)), 'the inferred objective comes from visible task prose')
+
+const missingMetadata = parseStoryProtocol(`莉莎点了点货物旁的空地，让你先决定从哪边动手。
+[choices: "从左侧开始搬运"|"检查箱子的绑带"|"询问莉莎摆放顺序"]`, 'zh')
+const canonicalMissing = canonicalizeTurnMetadata(initial, missingMetadata, cartridge)
+equal(validateTurnConsistency(initial, canonicalMissing.parsed, cartridge).length, 0, 'a missing protocol-only scene location is filled from authoritative state')
+ok(canonicalMissing.parsed.commands.some((command) => command.type === 'scene_location' && command.location === initial.location), 'canonical scene location uses authoritative location')
+
+const unboundImage = canonicalizeTurnMetadata(initial, missingMetadata, cartridge, 'an unbound scene proposal')
+equal(unboundImage.imagePrompt, undefined, 'an image proposal without image_location is discarded')
+ok(unboundImage.discardedImage, 'discarded image metadata is reported to the caller')
+equal(validateTurnConsistency(initial, unboundImage.parsed, cartridge, unboundImage.imagePrompt).length, 0, 'discarding an unbound image does not reject the story turn')
 
 const valid = parseStoryProtocol(`你先回到月线车厢。列车停稳后，你在雾杉林下车，护林人林薇请你参加今晚的巡逻任务。
 [map_update: new_location="雾杉林" connected_to="月线车厢" detail="夜间巡逻开始前的林灯栈道"]
@@ -76,4 +95,4 @@ ok(String(upgradedImage?.data?.prompt ?? '').includes('雾杉林'), 'regenerated
 ok(!String(upgradedImage?.data?.prompt ?? '').includes('old quay prompt'), 'old location prompt cannot survive migration')
 equal(repairKnownForestSceneDivergence(repaired, cartridge).location, '雾杉林', 'known screenshot migration is idempotent')
 
-console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'objective-required', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))
+console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'unbound-image-discarded', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))

@@ -10,6 +10,79 @@ function effectiveLocation(save: StorySave, parsed: ParsedScene): string {
   return update?.type === 'map_update' ? update.location : save.location
 }
 
+function visibleProse(parsed: ParsedScene): string {
+  return parsed.blocks
+    .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
+    .map((block) => block.text).join('\n')
+}
+
+function newTaskCue(locale: StoryCartridge['locale']): RegExp {
+  return locale === 'zh'
+    ? /你(?:现在)?(?:的)?(?:新|下一项|接下来(?:的)?)任务(?:是|为|：|:)|(?:接受|接下|领取|承担|受命执行|开始执行)[^。！？\n]{0,18}(?:任务|委托)|(?:交给|委托给|安排给)你[^。！？\n]{0,18}(?:任务|委托)/
+    : /your (?:new|next) (?:task|assignment) (?:is|:)|(?:accept|take on|receive|begin executing).{0,48}(?:task|assignment)|(?:assign|entrust).{0,32}(?:task|assignment).{0,24}you/i
+}
+
+function inferredObjective(parsed: ParsedScene, cartridge: StoryCartridge, action?: string): string | undefined {
+  const cue = newTaskCue(cartridge.locale)
+  const sentence = visibleProse(parsed).split(/(?<=[。！？.!?])|\n+/).map((value) => value.trim()).find((value) => cue.test(value))
+  const value = sentence || action?.trim()
+  return value ? value.replace(/^[“”"']+|[“”"']+$/g, '').slice(0, 120) : undefined
+}
+
+/**
+ * Canonicalize protocol-only metadata when the authoritative answer is already
+ * known locally. Missing scene_location must not turn an otherwise playable
+ * response into a dead end, and an unbound image proposal is safer to discard
+ * than to reject the whole story turn.
+ */
+export function canonicalizeTurnMetadata(
+  save: StorySave,
+  parsed: ParsedScene,
+  cartridge: StoryCartridge,
+  imagePrompt?: string,
+  action?: string,
+): { parsed: ParsedScene; imagePrompt?: string; discardedImage: boolean } {
+  const location = effectiveLocation(save, parsed)
+  const sceneLocations = parsed.commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
+  const imageLocations = parsed.commands.filter((command): command is Extract<ParsedCommand, { type: 'image_location' }> => command.type === 'image_location')
+  let commands = parsed.commands
+
+  if (sceneLocations.length === 0) commands = [...commands, { type: 'scene_location', location }]
+  else if (sceneLocations.length > 1 && sceneLocations.every((command) => clean(command.location) === clean(sceneLocations[0].location))) {
+    let retained = false
+    commands = commands.filter((command) => {
+      if (command.type !== 'scene_location') return true
+      if (retained) return false
+      retained = true
+      return true
+    })
+  }
+
+  if (!commands.some((command) => command.type === 'state')) {
+    const objective = inferredObjective(parsed, cartridge, action)
+    if (objective) commands = [...commands, { type: 'state', value: objective }]
+  }
+
+  let safeImagePrompt = imagePrompt
+  let discardedImage = false
+  if (imagePrompt && imageLocations.length === 0) {
+    safeImagePrompt = undefined
+    discardedImage = true
+  } else if (!imagePrompt && imageLocations.length) {
+    commands = commands.filter((command) => command.type !== 'image_location')
+  } else if (imagePrompt && imageLocations.length > 1 && imageLocations.every((command) => clean(command.location) === clean(imageLocations[0].location))) {
+    let retained = false
+    commands = commands.filter((command) => {
+      if (command.type !== 'image_location') return true
+      if (retained) return false
+      retained = true
+      return true
+    })
+  }
+
+  return { parsed: commands === parsed.commands ? parsed : { ...parsed, commands }, imagePrompt: safeImagePrompt, discardedImage }
+}
+
 function validChoices(parsed: ParsedScene): string[] {
   const command = [...parsed.commands].reverse().find((entry) => entry.type === 'choices')
   if (command?.type !== 'choices') return []
@@ -34,9 +107,7 @@ export function validateTurnConsistency(
   const imageLocations = parsed.commands.filter((command): command is Extract<ParsedCommand, { type: 'image_location' }> => command.type === 'image_location')
   const mapUpdates = parsed.commands.filter((command) => command.type === 'map_update')
   const choices = validChoices(parsed)
-  const prose = parsed.blocks
-    .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
-    .map((block) => block.text).join('\n')
+  const prose = visibleProse(parsed)
 
   if (sceneLocations.length !== 1) violations.add('turn.requires_one_scene_location')
   else if (clean(sceneLocations[0].location) !== clean(location)) violations.add('turn.scene_location_must_match_state')
@@ -50,10 +121,7 @@ export function validateTurnConsistency(
   if (!parsed.commands.some((command) => command.type === 'session_end') && !choices.length) violations.add('turn.requires_actionable_choices')
   if (choices.some((choice) => stalePlaceChoice(choice, location, save))) violations.add('choices.cannot_act_in_stale_location')
 
-  const newTaskCue = cartridge.locale === 'zh'
-    ? /(?:今晚|当前|接下来|新的?)\s*(?:的)?\s*[^。！？\n]{0,12}(?:任务|委托)|你(?:现在)?(?:的)?任务|开始(?:巡逻|调查|护送|值守)/
-    : /(?:tonight'?s|current|next|new)\s+(?:task|assignment|job)|your (?:current )?(?:task|assignment)|begin (?:the )?(?:patrol|investigation|escort|watch)/i
-  if (newTaskCue.test(prose) && !parsed.commands.some((command) => command.type === 'state')) violations.add('turn.new_task_requires_objective_state')
+  if (newTaskCue(cartridge.locale).test(prose) && !parsed.commands.some((command) => command.type === 'state')) violations.add('turn.new_task_requires_objective_state')
 
   const arrivedAtOtherKnownPlace = save.map.some((node) => clean(node.label) !== clean(save.location)
     && prose.split(/(?<=[。！？.!?])|\n+/).some((sentence) => clean(sentence).includes(clean(node.label))

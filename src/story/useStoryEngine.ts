@@ -8,8 +8,8 @@ import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
 import { applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { parseStoryProtocol } from './engine/protocol'
-import { repairKnownPaymentGap, validatePaymentConsistency } from './engine/paymentConsistency'
-import { repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
+import { canonicalizePaymentMetadata, repairKnownPaymentGap, validatePaymentConsistency } from './engine/paymentConsistency'
+import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
 import { domainOwnsDanger, resolveDomainAction, syncDomainDerivedState } from './engine/domainRules'
@@ -297,6 +297,10 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
         : await adapter.send(normalizedAction, { cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective }, setProgress)
       let parsed = parseStoryProtocol(result.content, actionLocale)
       if (!domainResolution) {
+        parsed = canonicalizePaymentMetadata(base, parsed, activeCartridge, normalizedAction)
+        let canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction)
+        parsed = canonical.parsed
+        if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
         const turnViolations = mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)
         const violations = [...validatePaymentConsistency(base, parsed, activeCartridge), ...turnViolations]
         if (violations.length) {
@@ -306,6 +310,10 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
             repair: { draft: result.content, violations },
           }, setProgress)
           parsed = parseStoryProtocol(result.content, actionLocale)
+          parsed = canonicalizePaymentMetadata(base, parsed, activeCartridge, normalizedAction)
+          canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction)
+          parsed = canonical.parsed
+          if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
           const remaining = [
             ...validatePaymentConsistency(base, parsed, activeCartridge),
             ...(mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)),

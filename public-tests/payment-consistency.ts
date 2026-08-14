@@ -1,5 +1,5 @@
 import { listCartridges } from '../src/story/cartridges/index'
-import { repairKnownPaymentGap, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
+import { canonicalizePaymentMetadata, repairKnownPaymentGap, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyParsedScene, createInitialSave } from '../src/story/engine/reducer'
 
@@ -59,6 +59,17 @@ equal(applyParsedScene(initial, purchase, cartridge, '买票').stats.coin, 3, '�
 
 const premature = parseStoryProtocol('她说：“再帮我把木箱送上车，我付你八枚钱币。”\n[widget: coin, add: 8]', 'zh')
 ok(validatePaymentConsistency(initial, premature, cartridge).includes('payment.promise_must_not_credit_coin'), '只承诺付款时不能提前入账')
+const canonicalOffer = canonicalizePaymentMetadata(initial, parseStoryProtocol('莉莎说：“搬完这些货物后，我付你八枚钱币。”', 'zh'), cartridge, '答应帮莉莎搬运货物')
+equal(validatePaymentConsistency(initial, canonicalOffer, cartridge).length, 0, '明确报价缺少协议时应本地建立合同')
+equal(applyParsedScene(initial, canonicalOffer, cartridge, '答应帮莉莎搬运货物').stats.coin, 6, '本地补合同不能提前发钱')
+
+const canonicalPaidWork = canonicalizePaymentMetadata(initial, parseStoryProtocol('你搬完最后一只箱子，莉莎把八枚钱币递给你。', 'zh'), cartridge, '帮莉莎搬运货物')
+equal(validatePaymentConsistency(initial, canonicalPaidWork, cartridge).length, 0, '明确完工付款缺少协议时应补齐即时合同与结算')
+equal(applyParsedScene(initial, canonicalPaidWork, cartridge, '帮莉莎搬运货物').stats.coin, 14, '本地结算必须按可见精确金额入账')
+
+const canonicalPurchase = canonicalizePaymentMetadata(initial, parseStoryProtocol('你支付了三枚钱币买下车票。', 'zh'), cartridge, '买票')
+equal(validatePaymentConsistency(initial, canonicalPurchase, cartridge).length, 0, '明确消费缺少协议时应补齐扣款')
+equal(applyParsedScene(initial, canonicalPurchase, cartridge, '买票').stats.coin, 3, '本地消费补齐必须扣除精确金额')
 
 const doubled = parseStoryProtocol(`你完成装箱，她把九枚钱币递给你。
 [job: action="offer" id="instant-packing" label="完成装箱" employer="码头雇主" wage="9"]
@@ -66,5 +77,8 @@ const doubled = parseStoryProtocol(`你完成装箱，她把九枚钱币递给�
 [widget: coin, add: 9]`, 'zh')
 ok(validatePaymentConsistency(initial, doubled, cartridge).includes('job.settlement_must_not_duplicate_widget_credit'), '合同结算不能叠加 widget')
 equal(applyParsedScene(initial, doubled, cartridge, '完成装箱').stats.coin, 15, 'reducer 防御必须避免双倍入账')
+const canonicalDoubled = canonicalizePaymentMetadata(initial, doubled, cartridge, '完成装箱')
+equal(validatePaymentConsistency(initial, canonicalDoubled, cartridge).length, 0, '本地规范化应移除合同结算旁的重复钱币指令')
+equal(applyParsedScene(initial, canonicalDoubled, cartridge, '完成装箱').stats.coin, 15, '移除重复指令后工资仍只入账一次')
 
-console.log(JSON.stringify({ ok: true, checks: ['offer-no-credit', 'contract-immutable', 'contract-settlement', 'repeat-rejected', 'screenshot-vague-payment', 'legacy-screenshot-repair', 'amount-mismatch', 'purchase', 'promise-no-credit', 'no-double-credit'] }))
+console.log(JSON.stringify({ ok: true, checks: ['offer-no-credit', 'contract-immutable', 'contract-settlement', 'repeat-rejected', 'screenshot-vague-payment', 'legacy-screenshot-repair', 'amount-mismatch', 'purchase', 'promise-no-credit', 'offer-canonicalized', 'paid-work-canonicalized', 'purchase-canonicalized', 'no-double-credit', 'duplicate-credit-canonicalized'] }))
