@@ -65,6 +65,8 @@ const repairedNightMarket = repairKnownPaymentGap(nightMarketLegacy, cartridge)
 equal(repairedNightMarket.stats.coin, 14, '截图中的夜市酱料报酬应一次性补八枚钱币')
 equal(repairedNightMarket.jobs.at(-1)?.id, 'legacy-night-market-sauce-sorting-v1', '夜市补账必须留下稳定结算记录')
 equal(repairKnownPaymentGap(repairedNightMarket, cartridge).stats.coin, 14, '夜市补账必须幂等')
+const spentAfterNightMarket = repairKnownPaymentGap({ ...nightMarketLegacy, stats: { ...nightMarketLegacy.stats, coin: 2 } }, cartridge)
+equal(spentAfterNightMarket.stats.coin, 10, '玩家在坏回合后消费过也必须补回遗漏的八枚报酬')
 
 const mismatch = parseStoryProtocol('工作完成后，她把六枚钱币递给你。\n[job: action="settle" id="mira-seed-crate"]', 'zh')
 ok(validatePaymentConsistency(afterOffer, mismatch, cartridge).includes('job.settlement_amount_must_match_contract'), '正文金额不能与合同不一致')

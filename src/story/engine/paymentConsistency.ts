@@ -203,7 +203,6 @@ export function repairKnownPaymentGap<T extends {
   blocks: StorySave['blocks']
   jobs?: StorySave['jobs']
 }>(candidate: T, cartridge: StoryCartridge): T {
-  if (Number(candidate.stats.coin) !== 6) return candidate
   const visible = candidate.blocks
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .slice(-24).map((block) => block.text).join('\n')
