@@ -39,6 +39,22 @@ function currentMapNodeId(save: StorySave): string | undefined {
   return save.map.find((node) => node.current)?.id
 }
 
+export function activeStatFloorRule(save: StorySave, cartridge: StoryCartridge) {
+  for (const definition of cartridge.statDefinitions) {
+    const rule = definition.floorRule
+    if (!rule) continue
+    const threshold = rule.threshold ?? definition.min
+    const value = Number(save.stats[definition.id] ?? definition.initial)
+    if (Number.isFinite(value) && value <= threshold) return { definition, rule, threshold, value }
+  }
+  return undefined
+}
+
+export function statFloorChoices(save: StorySave, cartridge: StoryCartridge): StorySave['choices'] | undefined {
+  const floor = activeStatFloorRule(save, cartridge)
+  return floor?.rule.recoveryChoices.map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
+}
+
 function requirementMet(requirement: DomainRequirement, save: StorySave): boolean {
   if (requirement.type === 'map') {
     const current = currentMapNodeId(save)
@@ -82,6 +98,18 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
     })
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
     .sort((left, right) => right.score - left.score || left.index - right.index)[0]
+  const floor = activeStatFloorRule(save, cartridge)
+  if (floor && (!candidate || !floor.rule.allowedDomainRuleIds.includes(candidate.rule.id))) {
+    return {
+      status: 'rejected',
+      ruleId: `stat-floor-${floor.definition.id}`,
+      intent: action,
+      effects: [],
+      reasons: [floor.rule.blockedText],
+      successText: floor.rule.blockedText,
+      successChoices: [...floor.rule.recoveryChoices],
+    }
+  }
   if (!candidate) return undefined
   const reasons = candidate.rule.requirements.filter((requirement) => !requirementMet(requirement, save)).map((requirement) => requirement.reason)
   return {

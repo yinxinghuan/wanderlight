@@ -12,7 +12,7 @@ import { canonicalizePaymentMetadata, repairKnownPaymentGap, validatePaymentCons
 import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
-import { domainOwnsDanger, resolveDomainAction, syncDomainDerivedState } from './engine/domainRules'
+import { activeStatFloorRule, domainOwnsDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
 import { inventoryImagePrompt } from './engine/itemImage'
@@ -133,6 +133,15 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
   } as StorySave
   if (!normalized.sessionEnded && normalized.choices.length < 2) normalized.choices = createRecoveryChoices(normalized, cartridge)
+  const floor = activeStatFloorRule(normalized, cartridge)
+  if (!normalized.sessionEnded && floor) {
+    normalized.choices = statFloorChoices(normalized, cartridge) ?? normalized.choices
+    const noticeId = `stat-floor-${floor.definition.id}-restored`
+    if (!normalized.blocks.some((block) => block.id === noticeId)) {
+      normalized.blocks = [...normalized.blocks, { id: noticeId, kind: 'event', text: floor.rule.enteredText, data: { statFloor: floor.definition.id, restored: 'true' } }]
+    }
+    normalized.blocks = normalized.blocks.filter((block) => block.id !== `choices-${normalized.scene}`)
+  }
   if (!normalized.sessionEnded && normalized.choices.length && !normalized.blocks.some((block) => block.id === `choices-${normalized.scene}`)) {
     normalized.blocks = [...normalized.blocks, createChoiceRecordBlock(normalized.scene, normalized.choices)]
   }

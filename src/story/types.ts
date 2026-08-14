@@ -31,6 +31,13 @@ export interface StatDefinition {
   warningAt?: number
   dangerAt?: number
   maxDelta?: number
+  floorRule?: {
+    threshold?: number
+    enteredText: string
+    blockedText: string
+    recoveryChoices: [string, string, string]
+    allowedDomainRuleIds: string[]
+  }
 }
 export interface SkillDefinition { id: string; label: string; value: number }
 export type CharacterStatus = 'known' | 'companion' | 'departed'

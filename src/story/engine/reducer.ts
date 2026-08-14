@@ -3,7 +3,7 @@ import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
 import { createInitialDangerState, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, choicesAreGrounded, createTransitionBlock } from './continuity'
-import { applyDomainResolution, domainAllowsModelCommand, syncDomainDerivedState } from './domainRules'
+import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
 
 function clamp(value: number, min: number, max: number): number {
@@ -641,6 +641,20 @@ export function applyParsedScene(
   // the dedicated resume action supplied by the Composer.
   if (!next.sessionEnded && next.choices.length >= 2 && !choicesAreGrounded(next.choices, { ...next, choices: save.choices, blocks: [...next.blocks, ...effects] }, cartridge)) next.choices = []
   if (!next.sessionEnded && next.choices.length < 2) next.choices = createRecoveryChoices(next, cartridge)
+
+  const floor = activeStatFloorRule(next, cartridge)
+  if (!next.sessionEnded && floor) {
+    const previous = Number(save.stats[floor.definition.id] ?? floor.definition.initial)
+    if (previous > floor.threshold) {
+      effects.push({
+        id: `stat-floor-${floor.definition.id}-${next.scene}`,
+        kind: 'event',
+        text: floor.rule.enteredText,
+        data: { statFloor: floor.definition.id, threshold: floor.threshold },
+      })
+    }
+    next.choices = statFloorChoices(next, cartridge) ?? next.choices
+  }
 
   const domainImageNode = domainMap?.type === 'map'
     ? (next.map.find((node) => node.id === domainMap.nodeId) ?? cartridge.initialMap.find((node) => node.id === domainMap.nodeId))

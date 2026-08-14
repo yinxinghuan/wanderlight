@@ -16,7 +16,8 @@
     "test:turn": "TMPDIR=/private/tmp tsx public-tests/turn-consistency.ts",
     "test:image-director": "TMPDIR=/private/tmp tsx public-tests/image-director.ts",
     "test:resume": "TMPDIR=/private/tmp tsx public-tests/reading-anchor.ts",
-    "test:audio": "TMPDIR=/private/tmp tsx public-tests/audio-synth.ts"
+    "test:audio": "TMPDIR=/private/tmp tsx public-tests/audio-synth.ts",
+    "test:stat-floor": "TMPDIR=/private/tmp tsx public-tests/stat-floor.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
