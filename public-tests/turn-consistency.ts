@@ -1,7 +1,7 @@
 import { listCartridges } from '../src/story/cartridges/index'
-import { decodeChoiceRecord } from '../src/story/engine/choiceInput'
+import { decodeChoiceRecord, encodeChoiceRecord } from '../src/story/engine/choiceInput'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
-import { applyConsistencyRecovery, createImageBlock, createInitialSave } from '../src/story/engine/reducer'
+import { applyConsistencyRecovery, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
 import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
 
@@ -42,6 +42,8 @@ const missingMetadata = parseStoryProtocol(`莉莎点了点货物旁的空地，
 const canonicalMissing = canonicalizeTurnMetadata(initial, missingMetadata, cartridge)
 equal(validateTurnConsistency(initial, canonicalMissing.parsed, cartridge).length, 0, 'a missing protocol-only scene location is filled from authoritative state')
 ok(canonicalMissing.parsed.commands.some((command) => command.type === 'scene_location' && command.location === initial.location), 'canonical scene location uses authoritative location')
+const ordinaryAction = canonicalizeTurnMetadata(initial, missingMetadata, cartridge, undefined, '前往杯影夜市寻找短发女人')
+ok(!ordinaryAction.parsed.commands.some((command) => command.type === 'state'), 'an ordinary action cannot silently replace the long-term objective')
 
 const unboundImage = canonicalizeTurnMetadata(initial, missingMetadata, cartridge, 'an unbound scene proposal')
 equal(unboundImage.imagePrompt, undefined, 'an image proposal without image_location is discarded')
@@ -53,7 +55,40 @@ equal(playableRecovery.scene, initial.scene + 1, 'a rejected generated turn beco
 equal(playableRecovery.location, initial.location, 'consistency recovery cannot change authoritative location')
 equal(playableRecovery.stats.coin, initial.stats.coin, 'consistency recovery cannot change authoritative stats')
 equal(playableRecovery.choices.length, 3, 'consistency recovery installs grounded actions')
+equal(playableRecovery.choices[0]?.label, '尝试一个未通过一致性校验的行动', 'consistency recovery keeps the player intent as the first action')
+ok(playableRecovery.blocks.some((block) => block.id === `consistency-recovery-${playableRecovery.scene}` && block.text.includes('尝试一个未通过一致性校验的行动') && block.text.includes(initial.location)), 'consistency recovery explains why the attempted action paused at the current location')
+ok(!playableRecovery.choices.some((choice) => choice.label.includes(initial.objective)), 'consistency recovery cannot route through a stale objective')
 ok(!playableRecovery.blocks.some((block) => /一致性检查|未写入存档|请重试/.test(block.text)), 'technical validation errors are not exposed to players')
+
+const legacyRecoveryAction = '前往杯影夜市观察夏琳和她的手下'
+const legacyRecoveryChoices = [
+  { id: 'recovery-6-0', label: '观察灯湾码头的新变化' },
+  { id: 'recovery-6-1', label: '追查“询问男子关于短发女人的更多细节”的线索' },
+  { id: 'recovery-6-2', label: '换一种方式处理当前局面' },
+]
+const legacyRecovery = {
+  ...initial,
+  scene: 6,
+  objective: '询问男子关于短发女人的更多细节',
+  lastActionId: legacyRecoveryAction,
+  blocks: [
+    ...initial.blocks,
+    { id: 'action-5', kind: 'event' as const, text: '询问男子关于短发女人的更多细节' },
+    { id: 'consistency-recovery-5', kind: 'narration' as const, text: '你重新确认了眼前的情况，没有把不确定的消息写进旅途记录。灯湾码头的一切仍在继续。' },
+    { id: 'choices-5', kind: 'choices' as const, text: encodeChoiceRecord(legacyRecoveryChoices) },
+    { id: 'action-6', kind: 'event' as const, text: legacyRecoveryAction },
+    { id: 'consistency-recovery-6', kind: 'narration' as const, text: '你重新确认了眼前的情况，没有把不确定的消息写进旅途记录。灯湾码头的一切仍在继续。' },
+    { id: 'choices-6', kind: 'choices' as const, text: encodeChoiceRecord(legacyRecoveryChoices) },
+  ],
+  choices: legacyRecoveryChoices,
+}
+const repairedRecovery = repairLegacyConsistencyRecovery(legacyRecovery, cartridge)
+equal(repairedRecovery.choices[0]?.label, legacyRecoveryAction, 'a saved legacy recovery returns to the exact attempted route')
+ok(repairedRecovery.blocks.find((block) => block.id === 'consistency-recovery-6')?.text.includes(legacyRecoveryAction), 'a saved legacy recovery gains an action-specific explanation')
+equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-6')?.text ?? '')[0], legacyRecoveryAction, 'saved article and tray choices migrate together')
+equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-5')?.text ?? '')[0], '询问男子关于短发女人的更多细节', 'earlier visible recovery choices migrate with the latest turn')
+equal(repairedRecovery.objective, legacyRecoveryAction, 'an objective polluted by the old action fallback is realigned to the latest intent')
+equal(repairLegacyConsistencyRecovery(repairedRecovery, cartridge).choices[0]?.label, legacyRecoveryAction, 'legacy recovery migration is idempotent')
 
 const valid = parseStoryProtocol(`你先回到月线车厢。列车停稳后，你在雾杉林下车，护林人林薇请你参加今晚的巡逻任务。
 [map_update: new_location="雾杉林" connected_to="月线车厢" detail="夜间巡逻开始前的林灯栈道"]
@@ -102,4 +137,4 @@ ok(String(upgradedImage?.data?.prompt ?? '').includes('雾杉林'), 'regenerated
 ok(!String(upgradedImage?.data?.prompt ?? '').includes('old quay prompt'), 'old location prompt cannot survive migration')
 equal(repairKnownForestSceneDivergence(repaired, cartridge).location, '雾杉林', 'known screenshot migration is idempotent')
 
-console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'unbound-image-discarded', 'playable-consistency-recovery', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))
+console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'ordinary-action-not-objective', 'unbound-image-discarded', 'action-aligned-consistency-recovery', 'legacy-recovery-repaired', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))

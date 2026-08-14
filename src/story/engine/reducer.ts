@@ -297,9 +297,31 @@ export function createRecoveryChoices(save: Pick<StorySave, 'scene' | 'location'
   return labels.map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
 }
 
+function createActionRecoveryChoices(
+  save: Pick<StorySave, 'scene' | 'location' | 'partyMemberIds'>,
+  cartridge: StoryCartridge,
+  actionId: string,
+): StorySave['choices'] {
+  const action = shortChoiceContext(actionId, cartridge.locale === 'zh' ? 44 : 84)
+  const location = shortChoiceContext(save.location, cartridge.locale === 'zh' ? 14 : 24)
+  const hasParty = save.partyMemberIds.length > 0
+  const labels = cartridge.locale === 'zh'
+    ? [
+        action || '继续完成刚才的行动',
+        `先在${location || '原地'}确认与这一步有关的路线和线索`,
+        hasParty ? '和同行者商量怎样继续刚才的行动' : `暂缓这一步，留在${location || '原地'}观察局势`,
+      ]
+    : [
+        action || 'Continue the action you just attempted',
+        `Confirm the route and clues for this action at ${location || 'the current place'}`,
+        hasParty ? 'Ask your companions how to continue the same action' : `Pause this action and observe from ${location || 'the current place'}`,
+      ]
+  return labels.map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
+}
+
 export function applyConsistencyRecovery(save: StorySave, cartridge: StoryCartridge, actionId: string): StorySave {
   const scene = save.scene + 1
-  const choices = createRecoveryChoices({ ...save, scene }, cartridge)
+  const choices = createActionRecoveryChoices({ ...save, scene }, cartridge, actionId)
   return {
     ...save,
     scene,
@@ -311,10 +333,83 @@ export function applyConsistencyRecovery(save: StorySave, cartridge: StoryCartri
     blocks: [
       ...save.blocks,
       { id: `action-${scene}`, kind: 'event', text: actionId },
-      { id: `consistency-recovery-${scene}`, kind: 'narration', text: t(cartridge.locale, 'consistencyRecovery', { name: save.location }) },
+      { id: `consistency-recovery-${scene}`, kind: 'narration', text: t(cartridge.locale, 'consistencyRecovery', { name: save.location, action: actionId }) },
       createChoiceRecordBlock(scene, choices),
     ],
   }
+}
+
+export function repairLegacyConsistencyRecovery<T extends {
+  scene: number
+  location: string
+  objective: string
+  partyMemberIds?: StorySave['partyMemberIds']
+  blocks: StorySave['blocks']
+  choices: StorySave['choices']
+  lastActionId?: string
+}>(candidate: T, cartridge: StoryCartridge): T {
+  const actions = new Map<number, string>()
+  const recoveryScenes = new Set<number>()
+  const recoveryLocations = new Map<number, string>()
+  for (const block of candidate.blocks) {
+    const actionScene = block.kind === 'event' ? block.id.match(/^action-(\d+)$/) : undefined
+    if (actionScene) actions.set(Number(actionScene[1]), block.text)
+    const recoveryScene = block.kind === 'narration' ? block.id.match(/^consistency-recovery-(\d+)$/) : undefined
+    if (recoveryScene) {
+      const scene = Number(recoveryScene[1])
+      recoveryScenes.add(scene)
+      const location = block.text.match(/。([^。]+)的一切仍在继续。?$/)?.[1]
+        ?? block.text.match(/Life at (.+?) continues around you\.?$/i)?.[1]
+      if (location) recoveryLocations.set(scene, location)
+    }
+  }
+  if (candidate.lastActionId?.trim() && !actions.has(candidate.scene)) actions.set(candidate.scene, candidate.lastActionId.trim())
+  if (!recoveryScenes.size) return candidate
+
+  const actionChoices = (scene: number, action: string) => createActionRecoveryChoices({
+    scene, location: recoveryLocations.get(scene) ?? candidate.location, partyMemberIds: candidate.partyMemberIds ?? [],
+  }, cartridge, action)
+  const currentAction = actions.get(candidate.scene)
+  const currentLocation = recoveryLocations.get(candidate.scene) ?? candidate.location
+  const currentExpected = currentAction ? t(cartridge.locale, 'consistencyRecovery', { name: currentLocation, action: currentAction }) : ''
+  const currentRecovery = candidate.blocks.find((block) => block.id === `consistency-recovery-${candidate.scene}` && block.kind === 'narration')
+  const currentWasLegacy = Boolean(currentAction && currentRecovery && (
+    currentRecovery.text !== currentExpected || candidate.choices[0]?.label !== actionChoices(candidate.scene, currentAction)[0]?.label
+  ))
+  let changed = false
+  const blocks = candidate.blocks.map((block) => {
+    const recoveryMatch = block.kind === 'narration' ? block.id.match(/^consistency-recovery-(\d+)$/) : undefined
+    if (recoveryMatch) {
+      const action = actions.get(Number(recoveryMatch[1]))
+      if (!action) return block
+      const text = t(cartridge.locale, 'consistencyRecovery', { name: recoveryLocations.get(Number(recoveryMatch[1])) ?? candidate.location, action })
+      if (block.text === text) return block
+      changed = true
+      return { ...block, text }
+    }
+    const choicesMatch = block.kind === 'choices' ? block.id.match(/^choices-(\d+)$/) : undefined
+    if (choicesMatch && recoveryScenes.has(Number(choicesMatch[1]))) {
+      const scene = Number(choicesMatch[1])
+      const action = actions.get(scene)
+      if (!action) return block
+      const text = encodeChoiceRecord(actionChoices(scene, action))
+      if (block.text === text) return block
+      changed = true
+      return { ...block, text }
+    }
+    return block
+  })
+
+  let choices = candidate.choices
+  if (currentAction && recoveryScenes.has(candidate.scene) && candidate.choices.every((choice) => choice.id.startsWith(`recovery-${candidate.scene}-`))) {
+    const aligned = actionChoices(candidate.scene, currentAction)
+    if (candidate.choices.some((choice, index) => choice.label !== aligned[index]?.label)) changed = true
+    choices = aligned
+  }
+  const eventTexts = new Set(candidate.blocks.filter((block) => block.kind === 'event' && block.id.startsWith('action-')).map((block) => block.text.trim()))
+  const objective = currentWasLegacy && currentAction && eventTexts.has(candidate.objective.trim()) ? currentAction : candidate.objective
+  if (objective !== candidate.objective) changed = true
+  return changed ? { ...candidate, objective, choices, blocks } : candidate
 }
 
 function validChoiceLabels(labels: string[]): string[] {

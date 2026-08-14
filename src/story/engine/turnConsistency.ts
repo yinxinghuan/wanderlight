@@ -22,11 +22,10 @@ function newTaskCue(locale: StoryCartridge['locale']): RegExp {
     : /your (?:new|next) (?:task|assignment) (?:is|:)|(?:accept|take on|receive|begin executing).{0,48}(?:task|assignment)|(?:assign|entrust).{0,32}(?:task|assignment).{0,24}you/i
 }
 
-function inferredObjective(parsed: ParsedScene, cartridge: StoryCartridge, action?: string): string | undefined {
+function inferredObjective(parsed: ParsedScene, cartridge: StoryCartridge): string | undefined {
   const cue = newTaskCue(cartridge.locale)
   const sentence = visibleProse(parsed).split(/(?<=[。！？.!?])|\n+/).map((value) => value.trim()).find((value) => cue.test(value))
-  const value = sentence || action?.trim()
-  return value ? value.replace(/^[“”"']+|[“”"']+$/g, '').slice(0, 120) : undefined
+  return sentence ? sentence.replace(/^[“”"']+|[“”"']+$/g, '').slice(0, 120) : undefined
 }
 
 /**
@@ -59,7 +58,7 @@ export function canonicalizeTurnMetadata(
   }
 
   if (!commands.some((command) => command.type === 'state')) {
-    const objective = inferredObjective(parsed, cartridge, action)
+    const objective = inferredObjective(parsed, cartridge)
     if (objective) commands = [...commands, { type: 'state', value: objective }]
   }
 
