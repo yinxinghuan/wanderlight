@@ -1,6 +1,6 @@
 import { listCartridges } from '../src/story/cartridges/index'
 import { applyParsedScene, createInitialSave } from '../src/story/engine/reducer'
-import { parseStoryProtocol } from '../src/story/engine/protocol'
+import { isStoryProtocolResidue, parseStoryProtocol } from '../src/story/engine/protocol'
 
 function ok(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 function equal(actual: unknown, expected: unknown, message: string) { if (actual !== expected) throw new Error(`${message}: ${String(actual)} !== ${String(expected)}`) }
@@ -29,4 +29,11 @@ const silentRemoval = applyParsedScene(joined, parseStoryProtocol(`[party_change
 [choices: "Continue"|"Check the map"|"Rest"]`, 'en'), cartridge, 'Continue')
 ok(silentRemoval.partyMemberIds.includes('mira-voss'), 'hidden command must not silently remove a companion')
 
-console.log(JSON.stringify({ ok: true, caps: ['stat-delta', 'inventory-count', 'character-id', 'silent-departure'], htmlRenderedAsText: true }))
+const missingColon = parseStoryProtocol(`The short-haired woman smiles with visible relief.
+[dialogue_focus speaker="Short-haired woman" expression="grateful, relaxed smile"]
+[choices: "Go to the market"|"Wait for the train"|"Ask about the payment"]`, 'en')
+ok(missingColon.commands.some((command) => command.type === 'dialogue_focus' && command.speaker === 'Short-haired woman'), 'a protocol command missing its colon should still parse')
+ok(!missingColon.blocks.some((block) => /dialogue_focus/.test(block.text)), 'missing-colon protocol must never leak into visible prose')
+ok(isStoryProtocolResidue('[dialogue_focus speaker="短发女人" expression="感激而轻松的笑容"]'), 'legacy saves should recognize the leaked protocol block for removal')
+
+console.log(JSON.stringify({ ok: true, caps: ['stat-delta', 'inventory-count', 'character-id', 'silent-departure', 'missing-colon-protocol'], htmlRenderedAsText: true }))

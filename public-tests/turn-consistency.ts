@@ -1,7 +1,7 @@
 import { listCartridges } from '../src/story/cartridges/index'
 import { decodeChoiceRecord } from '../src/story/engine/choiceInput'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
-import { createImageBlock, createInitialSave } from '../src/story/engine/reducer'
+import { applyConsistencyRecovery, createImageBlock, createInitialSave } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
 import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
 
@@ -47,6 +47,13 @@ const unboundImage = canonicalizeTurnMetadata(initial, missingMetadata, cartridg
 equal(unboundImage.imagePrompt, undefined, 'an image proposal without image_location is discarded')
 ok(unboundImage.discardedImage, 'discarded image metadata is reported to the caller')
 equal(validateTurnConsistency(initial, unboundImage.parsed, cartridge, unboundImage.imagePrompt).length, 0, 'discarding an unbound image does not reject the story turn')
+
+const playableRecovery = applyConsistencyRecovery(initial, cartridge, '尝试一个未通过一致性校验的行动')
+equal(playableRecovery.scene, initial.scene + 1, 'a rejected generated turn becomes one local playable recovery turn')
+equal(playableRecovery.location, initial.location, 'consistency recovery cannot change authoritative location')
+equal(playableRecovery.stats.coin, initial.stats.coin, 'consistency recovery cannot change authoritative stats')
+equal(playableRecovery.choices.length, 3, 'consistency recovery installs grounded actions')
+ok(!playableRecovery.blocks.some((block) => /一致性检查|未写入存档|请重试/.test(block.text)), 'technical validation errors are not exposed to players')
 
 const valid = parseStoryProtocol(`你先回到月线车厢。列车停稳后，你在雾杉林下车，护林人林薇请你参加今晚的巡逻任务。
 [map_update: new_location="雾杉林" connected_to="月线车厢" detail="夜间巡逻开始前的林灯栈道"]
@@ -95,4 +102,4 @@ ok(String(upgradedImage?.data?.prompt ?? '').includes('雾杉林'), 'regenerated
 ok(!String(upgradedImage?.data?.prompt ?? '').includes('old quay prompt'), 'old location prompt cannot survive migration')
 equal(repairKnownForestSceneDivergence(repaired, cartridge).location, '雾杉林', 'known screenshot migration is idempotent')
 
-console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'unbound-image-discarded', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))
+console.log(JSON.stringify({ ok: true, checks: ['bare-choice-recovery', 'scene-location-required', 'image-location-required', 'existing-task-not-misread', 'explicit-objective-required', 'objective-canonicalized', 'scene-location-canonicalized', 'unbound-image-discarded', 'playable-consistency-recovery', 'stale-place-choice-rejected', 'known-save-repaired', 'old-image-prompt-removed'] }))

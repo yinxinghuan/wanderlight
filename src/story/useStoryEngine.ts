@@ -6,8 +6,8 @@ import { aigramAdapter } from './adapters/aigram'
 import { mockAdapter } from './adapters/mock'
 import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
-import { applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
-import { parseStoryProtocol } from './engine/protocol'
+import { applyConsistencyRecovery, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
+import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { canonicalizePaymentMetadata, repairKnownPaymentGap, validatePaymentConsistency } from './engine/paymentConsistency'
 import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
@@ -91,7 +91,7 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     repairKnownPaymentGap(recoverPersistedChoices(repairMockLoop(candidate, cartridge), cartridge), cartridge),
     cartridge,
   )
-  let blocks = repaired.blocks
+  let blocks = repaired.blocks.filter((block) => !(block.kind === 'narration' && isStoryProtocolResidue(block.text)))
   if (!blocks.some((block) => block.kind === 'image')) {
     const legacyPrompt = repaired.imagePrompt?.trim() ?? ''
     const canRestoreImage = repaired.scene === 0 || Boolean(legacyPrompt || repaired.imageUrl)
@@ -318,7 +318,12 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
             ...validatePaymentConsistency(base, parsed, activeCartridge),
             ...(mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)),
           ]
-          if (remaining.length) throw new Error(actionLocale === 'zh' ? '这次回应的地点、选择、图片或状态未通过一致性检查，未写入存档。请重试。' : 'This response failed the turn consistency check and was not saved. Please retry.')
+          if (remaining.length) {
+            commit((current) => applyConsistencyRecovery(localizeKnownState(current, cartridge, activeCartridge), activeCartridge, normalizedAction))
+            setPendingAction('')
+            setProgress(null)
+            return
+          }
         }
       }
       commit((current) => applyParsedScene(localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction, result.imagePrompt, result.imageSubject, dangerDirective, domainResolution, result.imageCharacterId))

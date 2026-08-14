@@ -21,7 +21,7 @@ function chineseInteger(value: string): number | undefined {
 
 export function exactCoinAmount(text: string, locale: StoryCartridge['locale']): number | undefined {
   const match = locale === 'zh'
-    ? text.match(/(\d{1,3}|[零〇一二两三四五六七八九十百]{1,5})\s*(?:枚|个)?\s*(?:钱币|铜板|硬币|金币|银币)/)
+    ? text.match(/(\d{1,3}|[零〇一二两三四五六七八九十百]{1,5})\s*(?:枚|个)?\s*(?:钱币|铜板|铜币|硬币|金币|银币)/)
     : text.match(/(\d{1,3})\s+(?:coins?|coppers?|crowns?|tokens?)/i)
   if (!match) return undefined
   const amount = locale === 'zh' ? chineseInteger(match[1]) : Number(match[1])
@@ -66,7 +66,7 @@ export function canonicalizePaymentMetadata(
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .map((block) => block.text).join('\n')
   const sentences = prose.split(/(?<=[。！？.!?])|\n+/).map((sentence) => sentence.trim()).filter(Boolean)
-  const currency = /(?:钱币|铜板|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
+  const currency = /(?:钱币|铜板|铜币|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
   const received = cartridge.locale === 'zh'
     ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|当场结清|已经结清|收到了?)/
     : /(?:paid you|handed you|gave you|passed you|counted out|you received|payment (?:was|is) settled)/i
@@ -76,8 +76,10 @@ export function canonicalizePaymentMetadata(
   const promise = cartridge.locale === 'zh'
     ? /(?:如果|等你?|(?:完成|做完|搬完|送完|修完)[^。！？]{0,12}(?:(?:之后|以后)|后(?=[，,\s我你她他会将再])|再)|再?帮(?:我|忙)?)[^。！？]{0,48}(?:会|将|给你|付你|报酬|工钱)/
     : /(?:(?:if|when|after).{0,64}(?:will pay|pay you|wage|payment)|help.{0,64}(?:i(?:'ll| will) pay|pay you))/i
+  const completedTransfer = /(?:工作|任务|整理|搬运|装箱|修理|运送)[^。！？]{0,12}(?:完成|做完|搬完|送完|修完)后[，,][^。！？]{0,36}(?:递给你|交给你|付给你|给了你|塞给你|结清|收到)/
   const workContext = /(?:工作|短工|帮忙|干活|这份活|任务|报酬|工钱|搬|修|送|封好|装箱|work|job|shift|help|task|wage|repair|carry|deliver|pack)/i.test(prose)
-  const receivedSentence = sentences.find((sentence) => currency.test(sentence) && received.test(sentence) && !promise.test(sentence))
+  const receivedSentence = sentences.find((sentence) => currency.test(sentence) && received.test(sentence)
+    && (!promise.test(sentence) || (completedTransfer.test(sentence) && !/(?:等你|如果|会|将)/.test(sentence))))
   const spentSentence = sentences.find((sentence) => currency.test(sentence) && spent.test(sentence) && !promise.test(sentence))
   const promisedSentence = sentences.find((sentence) => currency.test(sentence) && promise.test(sentence) && !received.test(sentence))
   let commands = parsed.commands
@@ -129,7 +131,7 @@ export function validatePaymentConsistency(save: StorySave, parsed: ParsedScene,
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .map((block) => block.text).join('\n')
   const sentences = prose.split(/(?<=[。！？.!?])|\n+/).map((sentence) => sentence.trim()).filter(Boolean)
-  const currency = /(?:钱币|铜板|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
+  const currency = /(?:钱币|铜板|铜币|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
   const received = cartridge.locale === 'zh'
     ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|当场结清|已经结清|收到了?)/
     : /(?:paid you|handed you|gave you|passed you|counted out|you received|payment (?:was|is) settled)/i
@@ -139,8 +141,10 @@ export function validatePaymentConsistency(save: StorySave, parsed: ParsedScene,
   const promise = cartridge.locale === 'zh'
     ? /(?:如果|等你?|(?:完成|做完|搬完|送完|修完)[^。！？]{0,12}(?:(?:之后|以后)|后(?=[，,\s我你她他会将再])|再)|再?帮(?:我|忙)?)[^。！？]{0,48}(?:会|将|给你|付你|报酬|工钱)/
     : /(?:(?:if|when|after).{0,64}(?:will pay|pay you|wage|payment)|help.{0,64}(?:i(?:'ll| will) pay|pay you))/i
+  const completedTransfer = /(?:工作|任务|整理|搬运|装箱|修理|运送)[^。！？]{0,12}(?:完成|做完|搬完|送完|修完)后[，,][^。！？]{0,36}(?:递给你|交给你|付给你|给了你|塞给你|结清|收到)/
   const workContext = /(?:工作|短工|帮忙|干活|这份活|任务|报酬|工钱|搬|修|送|封好|装箱|work|job|shift|help|task|wage|repair|carry|deliver|pack)/i.test(prose)
-  const receivedSentence = sentences.find((sentence) => currency.test(sentence) && received.test(sentence) && !promise.test(sentence))
+  const receivedSentence = sentences.find((sentence) => currency.test(sentence) && received.test(sentence)
+    && (!promise.test(sentence) || (completedTransfer.test(sentence) && !/(?:等你|如果|会|将)/.test(sentence))))
   const spentSentence = sentences.find((sentence) => currency.test(sentence) && spent.test(sentence) && !promise.test(sentence))
   const promisedSentence = sentences.find((sentence) => currency.test(sentence) && promise.test(sentence) && !received.test(sentence))
   const widgets = parsed.commands.filter((command): command is WidgetCommand => command.type === 'widget' && command.id === 'coin')
@@ -199,21 +203,31 @@ export function repairKnownPaymentGap<T extends {
   blocks: StorySave['blocks']
   jobs?: StorySave['jobs']
 }>(candidate: T, cartridge: StoryCartridge): T {
-  const repairId = 'legacy-mira-seed-cold-storage-v1'
-  if (candidate.facts?.[repairId] || Number(candidate.stats.coin) !== 6) return candidate
+  if (Number(candidate.stats.coin) !== 6) return candidate
   const visible = candidate.blocks
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .slice(-24).map((block) => block.text).join('\n')
-  if (!/这些种荚马上可以送去冷藏了/.test(visible) || !/掏出几枚铜板递给你/.test(visible)) return candidate
   const definition = cartridge.statDefinitions.find((stat) => stat.id === 'coin')
   if (!definition) return candidate
-  const wage = 8
+  const knownGap = [
+    {
+      id: 'legacy-mira-seed-cold-storage-v1',
+      matches: /这些种荚马上可以送去冷藏了/.test(visible) && /掏出几枚铜板递给你/.test(visible),
+      label: '把发光种荚封好送去冷藏', employer: '媛夕', wage: 8,
+    },
+    {
+      id: 'legacy-night-market-sauce-sorting-v1',
+      matches: /整理工作完成后/.test(visible) && /一个小布袋/.test(visible) && /几枚铜币/.test(visible) && /这是你的报酬/.test(visible),
+      label: '整理夜市风味酱料', employer: '短发女人', wage: 8,
+    },
+  ].find((entry) => entry.matches && !candidate.facts?.[entry.id])
+  if (!knownGap) return candidate
   return {
     ...candidate,
-    stats: { ...candidate.stats, coin: Math.min(definition.max, Number(candidate.stats.coin) + wage) },
-    facts: { ...(candidate.facts ?? {}), [repairId]: true, jobs_completed: Number(candidate.facts?.jobs_completed ?? 0) + 1 },
+    stats: { ...candidate.stats, coin: Math.min(definition.max, Number(candidate.stats.coin) + knownGap.wage) },
+    facts: { ...(candidate.facts ?? {}), [knownGap.id]: true, jobs_completed: Number(candidate.facts?.jobs_completed ?? 0) + 1 },
     jobs: [...(candidate.jobs ?? []), {
-      id: repairId, label: '把发光种荚封好送去冷藏', employer: '媛夕', wage,
+      id: knownGap.id, label: knownGap.label, employer: knownGap.employer, wage: knownGap.wage,
       status: 'settled', offeredAtScene: Math.max(0, candidate.scene - 1), settledAtScene: candidate.scene,
     }],
   } as T

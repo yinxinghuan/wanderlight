@@ -6,6 +6,13 @@ const commandNames = new Set([
   'job', 'scene_location', 'image_location', 'dialogue_focus', 'reputation', 'character_update', 'party_change', 'encounter', 'session_end',
 ])
 
+const commandNameAlternation = [...commandNames].join('|')
+const completeProtocolResidue = new RegExp(`^\\s*\\[(?:${commandNameAlternation})(?:\\s*:|\\s+(?=[a-z_]+\\s*=))[\\s\\S]*\\]\\s*$`, 'i')
+
+export function isStoryProtocolResidue(value: string): boolean {
+  return completeProtocolResidue.test(value)
+}
+
 function uid(prefix: string, index: number, text: string): string {
   let hash = 2166136261
   for (let i = 0; i < text.length; i += 1) {
@@ -224,7 +231,10 @@ function parseCommand(name: string, source: string, locale: Locale): ParsedComma
 
 function commandSpans(raw: string, locale: Locale): Array<{ start: number; end: number; command: ParsedCommand }> {
   const spans: Array<{ start: number; end: number; command: ParsedCommand }> = []
-  const pattern = /\[([a-z_]+)\s*:/gi
+  // Some models omit the colon before an attribute list, for example
+  // [dialogue_focus speaker="..." expression="..."]. Treat that as the
+  // canonical command form instead of leaking machine protocol into prose.
+  const pattern = /\[([a-z_]+)(?:\s*:|\s+(?=[a-z_]+\s*=))/gi
   let match: RegExpExecArray | null
   while ((match = pattern.exec(raw))) {
     const name = match[1].toLowerCase()
@@ -244,7 +254,7 @@ function commandSpans(raw: string, locale: Locale): Array<{ start: number; end: 
       }
     }
     if (cursor >= raw.length) continue
-    const source = raw.slice(match.index + 1, cursor)
+    const source = raw.slice(match.index + 1, cursor).replace(new RegExp(`^\\s*${name}\\s+(?=[a-z_]+\\s*=)`, 'i'), `${name}: `)
     const command = parseCommand(name, source, locale)
     if (command) spans.push({ start: match.index, end: cursor + 1, command })
     pattern.lastIndex = cursor + 1
@@ -272,6 +282,7 @@ export function parseStoryProtocol(raw: string, locale: Locale = 'zh'): ParsedSc
   // Remove a protocol line that was cut off before its closing bracket. It is
   // machine residue, and leaving it at the tail prevents natural-choice scan.
   prose = prose.replace(/^\s*\[[a-z_]+\s*:.*$/gim, '\n')
+  prose = prose.replace(new RegExp(`^\\s*\\[(?:${commandNameAlternation})\\s+(?=[a-z_]+\\s*=)[^\\]\\n]*\\]\\s*$`, 'gim'), '\n')
   prose = removeNarratedStatusDump(prose)
   // Always recover a visible tail option list, even when the model also emits
   // a structured [choices] command. Models occasionally produce two different

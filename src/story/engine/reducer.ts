@@ -297,6 +297,26 @@ export function createRecoveryChoices(save: Pick<StorySave, 'scene' | 'location'
   return labels.map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
 }
 
+export function applyConsistencyRecovery(save: StorySave, cartridge: StoryCartridge, actionId: string): StorySave {
+  const scene = save.scene + 1
+  const choices = createRecoveryChoices({ ...save, scene }, cartridge)
+  return {
+    ...save,
+    scene,
+    locale: cartridge.locale,
+    lastActionId: actionId,
+    sessionEnded: false,
+    decisionContext: '',
+    choices,
+    blocks: [
+      ...save.blocks,
+      { id: `action-${scene}`, kind: 'event', text: actionId },
+      { id: `consistency-recovery-${scene}`, kind: 'narration', text: t(cartridge.locale, 'consistencyRecovery', { name: save.location }) },
+      createChoiceRecordBlock(scene, choices),
+    ],
+  }
+}
+
 function validChoiceLabels(labels: string[]): string[] {
   const clean = labels.map((label) => label.trim()).filter((label) => label.length >= 2 && label.length <= 96)
   return clean.length >= 2 && clean.length <= 5 && new Set(clean).size === clean.length ? clean : []

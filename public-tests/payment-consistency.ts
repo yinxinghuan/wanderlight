@@ -38,6 +38,10 @@ const screenshot = parseStoryProtocol('最后一个箱子被封好，短发女�
 const screenshotViolations = validatePaymentConsistency(initial, screenshot, cartridge)
 ok(screenshotViolations.includes('payment.completed_payment_requires_exact_amount'), '截图中的“几枚铜板”必须被拒绝')
 ok(screenshotViolations.includes('job.completed_work_requires_settlement'), '已付款的完工文案必须有合同结算')
+const copperCoinScreenshot = parseStoryProtocol('整理工作完成后，她把装着几枚铜币的小布袋递给你，说这是你的报酬。', 'zh')
+const copperCoinViolations = validatePaymentConsistency(initial, copperCoinScreenshot, cartridge)
+ok(copperCoinViolations.includes('payment.completed_payment_requires_exact_amount'), '“几枚铜币”同样必须被识别并拒绝模糊入账')
+ok(copperCoinViolations.includes('job.completed_work_requires_settlement'), '铜币付款不能绕过工作结算')
 
 const legacyScreenshot = {
   ...initial,
@@ -49,6 +53,18 @@ const legacyScreenshot = {
 const repairedLegacy = repairKnownPaymentGap(legacyScreenshot, cartridge)
 equal(repairedLegacy.stats.coin, 14, '已知截图旧存档应按原路线八枚报酬补账')
 equal(repairKnownPaymentGap(repairedLegacy, cartridge).stats.coin, 14, '旧存档补账必须幂等')
+
+const nightMarketLegacy = {
+  ...initial,
+  blocks: [...initial.blocks,
+    { id: 'night-market-1', kind: 'narration' as const, text: '调制夜市上独特的风味酱料，卖得很贵。' },
+    { id: 'night-market-2', kind: 'narration' as const, text: '整理工作完成后，她从怀里掏出一个小布袋，里面装着几枚铜币，递给你：“这是你的报酬，够你今晚住旅店了。”' },
+  ],
+}
+const repairedNightMarket = repairKnownPaymentGap(nightMarketLegacy, cartridge)
+equal(repairedNightMarket.stats.coin, 14, '截图中的夜市酱料报酬应一次性补八枚钱币')
+equal(repairedNightMarket.jobs.at(-1)?.id, 'legacy-night-market-sauce-sorting-v1', '夜市补账必须留下稳定结算记录')
+equal(repairKnownPaymentGap(repairedNightMarket, cartridge).stats.coin, 14, '夜市补账必须幂等')
 
 const mismatch = parseStoryProtocol('工作完成后，她把六枚钱币递给你。\n[job: action="settle" id="mira-seed-crate"]', 'zh')
 ok(validatePaymentConsistency(afterOffer, mismatch, cartridge).includes('job.settlement_amount_must_match_contract'), '正文金额不能与合同不一致')
@@ -81,4 +97,4 @@ const canonicalDoubled = canonicalizePaymentMetadata(initial, doubled, cartridge
 equal(validatePaymentConsistency(initial, canonicalDoubled, cartridge).length, 0, '本地规范化应移除合同结算旁的重复钱币指令')
 equal(applyParsedScene(initial, canonicalDoubled, cartridge, '完成装箱').stats.coin, 15, '移除重复指令后工资仍只入账一次')
 
-console.log(JSON.stringify({ ok: true, checks: ['offer-no-credit', 'contract-immutable', 'contract-settlement', 'repeat-rejected', 'screenshot-vague-payment', 'legacy-screenshot-repair', 'amount-mismatch', 'purchase', 'promise-no-credit', 'offer-canonicalized', 'paid-work-canonicalized', 'purchase-canonicalized', 'no-double-credit', 'duplicate-credit-canonicalized'] }))
+console.log(JSON.stringify({ ok: true, checks: ['offer-no-credit', 'contract-immutable', 'contract-settlement', 'repeat-rejected', 'screenshot-vague-payment', 'copper-coin-recognition', 'legacy-screenshot-repair', 'night-market-legacy-repair', 'amount-mismatch', 'purchase', 'promise-no-credit', 'offer-canonicalized', 'paid-work-canonicalized', 'purchase-canonicalized', 'no-double-credit', 'duplicate-credit-canonicalized'] }))
