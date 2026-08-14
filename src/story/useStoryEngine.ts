@@ -13,6 +13,7 @@ import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTur
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
 import { activeStatFloorRule, domainOwnsDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
+import { resolveDeterministicOpeningTurn } from './engine/authoredTurns'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
 import { inventoryImagePrompt } from './engine/itemImage'
@@ -309,20 +310,29 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
         return
       }
       const domainResolution = resolveDomainAction(base, activeCartridge, normalizedAction)
+      const authoredOpeningTurn = domainResolution ? undefined : resolveDeterministicOpeningTurn(base, activeCartridge, normalizedAction)
       const dangerDirective = domainResolution?.status === 'rejected' || domainOwnsDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
       let result = domainResolution
         ? { content: domainResolution.status === 'accepted' ? domainResolution.successText : domainResolution.reasons.join(activeCartridge.locale === 'zh' ? '；' : '; ') }
+        : authoredOpeningTurn
+          ? {
+              content: authoredOpeningTurn.content,
+              imagePrompt: authoredOpeningTurn.imagePrompt,
+              imageSubject: authoredOpeningTurn.imageSubject,
+              imageCharacterId: authoredOpeningTurn.imageCharacterId,
+            }
         : await adapter.send(normalizedAction, { cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective }, setProgress)
       let parsed = parseStoryProtocol(result.content, actionLocale)
       if (!domainResolution) {
         parsed = canonicalizePaymentMetadata(base, parsed, activeCartridge, normalizedAction)
-        let canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction)
+        let canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction, Boolean(authoredOpeningTurn))
         parsed = canonical.parsed
         if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
         const turnViolations = mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)
         const violations = [...validatePaymentConsistency(base, parsed, activeCartridge), ...turnViolations]
         if (violations.length) {
           setProgress({ label: t(actionLocale, 'checkingState'), percent: 82 })
+          if (authoredOpeningTurn) throw new Error(`invalid deterministic opening turn: ${violations.join(', ')}`)
           result = await adapter.send(normalizedAction, {
             cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective,
             repair: { draft: result.content, violations },

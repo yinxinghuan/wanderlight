@@ -41,11 +41,28 @@ export function canonicalizeTurnMetadata(
   cartridge: StoryCartridge,
   imagePrompt?: string,
   action?: string,
+  trustedAuthored = false,
 ): { parsed: ParsedScene; imagePrompt?: string; discardedImage: boolean } {
-  const location = effectiveLocation(save, parsed)
-  const sceneLocations = parsed.commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
-  const imageLocations = parsed.commands.filter((command): command is Extract<ParsedCommand, { type: 'image_location' }> => command.type === 'image_location')
   let commands = parsed.commands
+  const originalSceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
+  const hasMapUpdate = commands.some((command) => command.type === 'map_update')
+  if (!hasMapUpdate && originalSceneLocations.length === 1 && clean(originalSceneLocations[0].location) !== clean(save.location)) {
+    const destination = save.map.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
+      ?? cartridge.initialMap.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
+    const prose = visibleProse(parsed)
+    const visiblyArrived = destination && prose.split(/(?<=[。！？.!?])|\n+/).some((sentence) => clean(sentence).includes(clean(destination.label))
+      && /(?:抵达|到达|来到|走进|进入|已经在|身处|下车|穿过.+(?:走进|进入)|arriv|reach|enter|step into|now in|get off|cross.+into)/i.test(sentence))
+    if (destination && visiblyArrived) {
+      commands = [...commands, {
+        type: 'map_update', location: destination.label, connectedTo: destination.connectedTo,
+        detail: destination.detail, lore: destination.lore, facts: destination.facts,
+      }]
+    }
+  }
+
+  const location = effectiveLocation(save, { ...parsed, commands })
+  const sceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
+  const imageLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'image_location' }> => command.type === 'image_location')
 
   if (sceneLocations.length === 0) commands = [...commands, { type: 'scene_location', location }]
   else if (sceneLocations.length > 1 && sceneLocations.every((command) => clean(command.location) === clean(sceneLocations[0].location))) {
@@ -66,8 +83,11 @@ export function canonicalizeTurnMetadata(
   let safeImagePrompt = imagePrompt
   let discardedImage = false
   if (imagePrompt && imageLocations.length === 0) {
-    safeImagePrompt = undefined
-    discardedImage = true
+    if (trustedAuthored) commands = [...commands, { type: 'image_location', location }]
+    else {
+      safeImagePrompt = undefined
+      discardedImage = true
+    }
   } else if (!imagePrompt && imageLocations.length) {
     commands = commands.filter((command) => command.type !== 'image_location')
   } else if (imagePrompt && imageLocations.length > 1 && imageLocations.every((command) => clean(command.location) === clean(imageLocations[0].location))) {
@@ -92,11 +112,26 @@ export function canonicalizeTurnMetadata(
         .filter((label) => !stalePlaceChoice(label, location, save))
         .slice(0, 5)
         .map((label, index) => ({ id: `candidate-${index}`, label }))
+      const mapUpdate = commands.find((entry): entry is Extract<ParsedCommand, { type: 'map_update' }> => entry.type === 'map_update')
+      const offeredJobs = commands.filter((entry): entry is Extract<ParsedCommand, { type: 'job' }> => entry.type === 'job' && entry.action === 'offer')
+      const groundedMap = mapUpdate
+        ? save.map.map((node) => clean(node.label) === clean(mapUpdate.location)
+          ? { ...node, current: true, visited: true, detail: mapUpdate.detail ?? node.detail, lore: mapUpdate.lore ?? node.lore, facts: mapUpdate.facts ?? node.facts }
+          : { ...node, current: false })
+        : save.map
       const grounded = filterGroundedChoices(candidates, {
         ...save,
         location,
+        map: groundedMap,
+        jobs: [
+          ...save.jobs,
+          ...offeredJobs.map((job) => ({
+            id: job.id, label: job.label ?? job.id, employer: job.employer, wage: job.wage ?? 0,
+            status: 'offered' as const, offeredAtScene: save.scene + 1,
+          })),
+        ],
         blocks: [...save.blocks, ...parsed.blocks],
-      }, cartridge).map((choice) => choice.label)
+      }, cartridge, parsed.blocks).map((choice) => choice.label)
       if (grounded.length !== command.choices.length || grounded.some((label, index) => label !== command.choices[index])) {
         commands = commands.map((entry, index) => index === choiceIndex ? { type: 'choices' as const, choices: grounded } : entry)
       }
@@ -114,7 +149,7 @@ function validChoices(parsed: ParsedScene): string[] {
 }
 
 function stalePlaceChoice(choice: string, location: string, save: StorySave): boolean {
-  const destinationVerb = /(?:前往|去往|去|返回|回到|搭乘|乘坐|买票|离开|赶往|travel|go to|head to|return|ride|take .* to|leave for)/i
+  const destinationVerb = /(?:前往|去往|去|返回|回到|搭乘|乘坐|乘车到|坐到|陪.+到|买票|离开|赶往|送去|送到|带去|护送|通往|检查.+支线|travel|go to|head to|return|ride|take .* to|leave for|deliver .* to|bring .* to|escort .* to)/i
   return save.map.some((node) => node.label !== location && clean(choice).includes(clean(node.label)) && !destinationVerb.test(choice))
 }
 

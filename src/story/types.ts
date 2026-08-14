@@ -226,7 +226,15 @@ export interface StoryCartridge {
   initialFacts?: Record<string, StoryFactValue>
   statDefinitions: [StatDefinition, StatDefinition, StatDefinition]
   drawerLabels: Record<DrawerId, string>
-  opening: { location: string; time: string; objective: string; imagePrompt: string; blocks: StoryBlock[]; choices: Choice[] }
+  opening: {
+    location: string
+    time: string
+    objective: string
+    imagePrompt: string
+    blocks: StoryBlock[]
+    choices: Choice[]
+    deterministicTurns?: Record<string, DemoTurn>
+  }
   characters: CharacterDefinition[]
   initialPartyMemberIds?: string[]
   initialMap: MapNode[]

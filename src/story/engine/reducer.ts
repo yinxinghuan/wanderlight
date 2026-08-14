@@ -298,20 +298,16 @@ export function createRecoveryChoices(save: Pick<StorySave, 'scene' | 'location'
 }
 
 function createActionRecoveryChoices(
-  save: Pick<StorySave, 'scene' | 'location' | 'partyMemberIds'>,
+  save: Pick<StorySave, 'scene' | 'location'>,
   cartridge: StoryCartridge,
-  actionId: string,
 ): StorySave['choices'] {
-  const action = shortChoiceContext(actionId, cartridge.locale === 'zh' ? 44 : 84)
   const location = shortChoiceContext(save.location, cartridge.locale === 'zh' ? 14 : 24)
   const labels = cartridge.locale === 'zh'
     ? [
-        action || '继续完成刚才的行动',
         `查看${location || '原地'}现在能做的事`,
         '放弃原计划，改走别的路',
       ]
     : [
-        action || 'Continue the action you just attempted',
         `See what is actually possible at ${location || 'the current place'}`,
         'Set the original plan aside and take another route',
       ]
@@ -361,8 +357,8 @@ export function resolveConsistencyRecoverySelection(
 ): { mode: 'confirm' | 'pause'; originalAction: string } | undefined {
   if (!save.blocks.some((block) => block.id === `consistency-recovery-${save.scene}`)) return undefined
   const index = save.choices.findIndex((choice) => choice.id.startsWith(`recovery-${save.scene}-`) && choice.label === action)
-  if (index !== 1 && index !== 2) return undefined
-  return { mode: index === 1 ? 'confirm' : 'pause', originalAction: rootConsistencyAction(save, cartridge) }
+  if (index !== 0 && index !== 1) return undefined
+  return { mode: index === 0 ? 'confirm' : 'pause', originalAction: rootConsistencyAction(save, cartridge) }
 }
 
 export function applyConsistencyRecoverySelection(
@@ -373,12 +369,7 @@ export function applyConsistencyRecoverySelection(
 ): StorySave {
   const scene = save.scene + 1
   const generic = createRecoveryChoices({ ...save, scene }, cartridge)
-  const choices = selection.mode === 'confirm' && selection.originalAction
-    ? [
-        { id: `recovery-exit-${scene}-0`, label: selection.originalAction },
-        ...generic.filter((choice) => choice.label !== selection.originalAction)
-      ]
-    : generic.map((choice, index) => ({ ...choice, id: `recovery-exit-${scene}-${index}` }))
+  const choices = generic.map((choice, index) => ({ ...choice, id: `recovery-exit-${scene}-${index}` }))
   const uniqueChoices = choices.filter((choice, index, all) => all.findIndex((entry) => entry.label === choice.label) === index).slice(0, 5)
   return {
     ...save,
@@ -407,7 +398,7 @@ export function applyConsistencyRecoverySelection(
 export function applyConsistencyRecovery(save: StorySave, cartridge: StoryCartridge, actionId: string): StorySave {
   const scene = save.scene + 1
   const originalAction = rootConsistencyAction(save, cartridge, actionId)
-  const choices = createActionRecoveryChoices({ ...save, scene }, cartridge, originalAction)
+  const choices = createActionRecoveryChoices({ ...save, scene }, cartridge)
   return {
     ...save,
     scene,
@@ -415,6 +406,11 @@ export function applyConsistencyRecovery(save: StorySave, cartridge: StoryCartri
     lastActionId: originalAction,
     sessionEnded: false,
     decisionContext: '',
+    facts: {
+      ...save.facts,
+      consistency_quarantined_action: originalAction,
+      consistency_quarantined_location: save.location,
+    },
     choices,
     blocks: [
       ...save.blocks,
@@ -461,16 +457,16 @@ export function repairLegacyConsistencyRecovery<T extends {
     }
     return action
   }
-  const actionChoices = (scene: number, action: string) => createActionRecoveryChoices({
-    scene, location: recoveryLocations.get(scene) ?? candidate.location, partyMemberIds: candidate.partyMemberIds ?? [],
-  }, cartridge, rootActionForScene(scene, action))
+  const actionChoices = (scene: number) => createActionRecoveryChoices({
+    scene, location: recoveryLocations.get(scene) ?? candidate.location,
+  }, cartridge)
   const rawCurrentAction = actions.get(candidate.scene)
   const currentAction = rawCurrentAction ? rootActionForScene(candidate.scene, rawCurrentAction) : undefined
   const currentLocation = recoveryLocations.get(candidate.scene) ?? candidate.location
   const currentExpected = currentAction ? t(cartridge.locale, 'consistencyRecovery', { name: currentLocation, action: currentAction }) : ''
   const currentRecovery = candidate.blocks.find((block) => block.id === `consistency-recovery-${candidate.scene}` && block.kind === 'narration')
   const currentWasLegacy = Boolean(currentAction && currentRecovery && (
-    currentRecovery.text !== currentExpected || candidate.choices[0]?.label !== actionChoices(candidate.scene, currentAction)[0]?.label
+    currentRecovery.text !== currentExpected || candidate.choices[0]?.label !== actionChoices(candidate.scene)[0]?.label
   ))
   let changed = false
   const blocks = candidate.blocks.map((block) => {
@@ -490,7 +486,7 @@ export function repairLegacyConsistencyRecovery<T extends {
       const scene = Number(choicesMatch[1])
       const rawAction = actions.get(scene)
       if (!rawAction) return block
-      const text = encodeChoiceRecord(actionChoices(scene, rootActionForScene(scene, rawAction)))
+      const text = encodeChoiceRecord(actionChoices(scene))
       if (block.text === text) return block
       changed = true
       return { ...block, text }
@@ -500,7 +496,7 @@ export function repairLegacyConsistencyRecovery<T extends {
 
   let choices = candidate.choices
   if (currentAction && recoveryScenes.has(candidate.scene) && candidate.choices.every((choice) => choice.id.startsWith(`recovery-${candidate.scene}-`))) {
-    const aligned = actionChoices(candidate.scene, currentAction)
+    const aligned = actionChoices(candidate.scene)
     if (candidate.choices.some((choice, index) => choice.label !== aligned[index]?.label)) changed = true
     choices = aligned
   }
@@ -587,6 +583,8 @@ export function applyParsedScene(
     danger: normalizeDangerState(save.danger),
     decisionContext: '', sessionEnded: false, lastActionId: actionId,
   }
+  delete next.facts.consistency_quarantined_action
+  delete next.facts.consistency_quarantined_location
   const visibleTurnText = parsed.blocks
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .map((block) => block.text.trim()).filter(Boolean).join(' ')
@@ -740,7 +738,7 @@ export function applyParsedScene(
   // truncates its machine-readable choices. A real checkpoint may still use
   // the dedicated resume action supplied by the Composer.
   if (!next.sessionEnded && next.choices.length) {
-    next.choices = filterGroundedChoices(next.choices, { ...next, blocks: [...next.blocks, ...effects] }, cartridge)
+    next.choices = filterGroundedChoices(next.choices, { ...next, blocks: [...next.blocks, ...effects] }, cartridge, [...parsed.blocks, ...effects])
   }
   if (!next.sessionEnded && next.choices.length === 0) next.choices = createRecoveryChoices(next, cartridge)
 

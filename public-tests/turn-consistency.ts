@@ -4,6 +4,8 @@ import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyConsistencyRecovery, applyConsistencyRecoverySelection, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
 import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
+import { canonicalizePaymentMetadata, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
+import { resolveDeterministicOpeningTurn } from '../src/story/engine/authoredTurns'
 import { t } from '../src/story/i18n'
 
 function ok(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
@@ -45,7 +47,7 @@ const canonicalTask = canonicalizeTurnMetadata(initial, explicitNewTask, cartrid
 equal(validateTurnConsistency(initial, canonicalTask.parsed, cartridge).length, 0, 'a visible accepted task receives a local objective command')
 ok(canonicalTask.parsed.commands.some((command) => command.type === 'state' && /搬运货物/.test(command.value)), 'the inferred objective comes from visible task prose')
 
-const missingMetadata = parseStoryProtocol(`莉莎点了点货物旁的空地，让你先决定从哪边动手。
+const missingMetadata = parseStoryProtocol(`莉莎检查了箱子的绑带，指向左侧空地，并说明稍后会告诉你摆放顺序。
 [choices: "从左侧开始搬运"|"检查箱子的绑带"|"询问莉莎摆放顺序"]`, 'zh')
 const canonicalMissing = canonicalizeTurnMetadata(initial, missingMetadata, cartridge)
 equal(validateTurnConsistency(initial, canonicalMissing.parsed, cartridge).length, 0, 'a missing protocol-only scene location is filled from authoritative state')
@@ -62,17 +64,17 @@ const playableRecovery = applyConsistencyRecovery(initial, cartridge, '尝试一
 equal(playableRecovery.scene, initial.scene + 1, 'a rejected generated turn becomes one local playable recovery turn')
 equal(playableRecovery.location, initial.location, 'consistency recovery cannot change authoritative location')
 equal(playableRecovery.stats.coin, initial.stats.coin, 'consistency recovery cannot change authoritative stats')
-equal(playableRecovery.choices.length, 3, 'consistency recovery installs grounded actions')
-equal(playableRecovery.choices[0]?.label, '尝试一个未通过一致性校验的行动', 'consistency recovery keeps the player intent as the first action')
-ok(playableRecovery.blocks.some((block) => block.id === `consistency-recovery-${playableRecovery.scene}` && block.text.includes('尝试一个未通过一致性校验的行动') && block.text.includes(initial.location)), 'consistency recovery explains why the attempted action paused at the current location')
+equal(playableRecovery.choices.length, 2, 'consistency recovery installs only deterministic local exits')
+ok(!playableRecovery.choices.some((choice) => choice.label === '尝试一个未通过一致性校验的行动'), 'a failed generated action is quarantined instead of re-offered')
+ok(playableRecovery.blocks.some((block) => block.id === `consistency-recovery-${playableRecovery.scene}` && block.text.includes(initial.location)), 'consistency recovery explains the safe pause at the current location')
 ok(!playableRecovery.choices.some((choice) => choice.label.includes(initial.objective)), 'consistency recovery cannot route through a stale objective')
 ok(!playableRecovery.blocks.some((block) => /一致性检查|未写入存档|请重试/.test(block.text)), 'technical validation errors are not exposed to players')
 
-const confirmAction = playableRecovery.choices[1].label
+const confirmAction = playableRecovery.choices[0].label
 const confirmSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, confirmAction)
 equal(confirmSelection?.mode, 'confirm', 'the confirmation branch is recognized as a local recovery exit')
 const confirmed = applyConsistencyRecoverySelection(playableRecovery, cartridge, confirmAction, confirmSelection!)
-equal(confirmed.choices[0]?.label, '尝试一个未通过一致性校验的行动', 'confirmation keeps the original action available for an explicit retry')
+ok(!confirmed.choices.some((choice) => choice.label === '尝试一个未通过一致性校验的行动'), 'confirmation does not promote the failed action again')
 equal(new Set(confirmed.choices.map((choice) => choice.label)).size, confirmed.choices.length, 'confirmation exits with unique choices')
 ok(confirmed.blocks.some((block) => block.data?.consistencyRecoveryExit === 'confirm'), 'confirmation commits a local explanatory turn')
 ok(!confirmed.blocks.some((block) => block.id === `consistency-recovery-${confirmed.scene}`), 'confirmation does not call the model or create another recovery loop')
@@ -86,9 +88,9 @@ const recoveryWithParty = {
   partyMemberIds: [...playableRecovery.partyMemberIds, 'qa-companion'],
 }
 const confirmedWithParty = applyConsistencyRecoverySelection(recoveryWithParty, cartridge, confirmAction, confirmSelection!)
-equal(confirmedWithParty.choices.length, 4, 'a retry plus three grounded recovery exits are not truncated to three')
+equal(confirmedWithParty.choices.length, 3, 'all grounded recovery exits remain available without the failed action')
 
-const pauseAction = playableRecovery.choices[2].label
+const pauseAction = playableRecovery.choices[1].label
 const pauseSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction)
 equal(pauseSelection?.mode, 'pause', 'the pause branch is recognized as a local recovery exit')
 const paused = applyConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction, pauseSelection!)
@@ -96,8 +98,8 @@ equal(new Set(paused.choices.map((choice) => choice.label)).size, paused.choices
 ok(!paused.choices.some((choice) => /确认与这一步|暂缓这一步|查看.+现在能做的事|放弃原计划/.test(choice.label)), 'pause leaves the synthetic recovery menu behind')
 
 const nestedRecovery = applyConsistencyRecovery(playableRecovery, cartridge, confirmAction)
-equal(nestedRecovery.choices[0]?.label, '尝试一个未通过一致性校验的行动', 'a repeated consistency failure unwinds to the original action')
-equal(new Set(nestedRecovery.choices.map((choice) => choice.label)).size, 3, 'a nested recovery cannot duplicate its first two choices')
+ok(!nestedRecovery.choices.some((choice) => choice.label === '尝试一个未通过一致性校验的行动'), 'a repeated consistency failure still cannot re-offer the failed action')
+equal(new Set(nestedRecovery.choices.map((choice) => choice.label)).size, 2, 'a nested recovery keeps two unique local exits')
 
 const legacyRecoveryAction = '前往杯影夜市观察夏琳和她的手下'
 const legacyRecoveryChoices = [
@@ -122,12 +124,12 @@ const legacyRecovery = {
   choices: legacyRecoveryChoices,
 }
 const repairedRecovery = repairLegacyConsistencyRecovery(legacyRecovery, cartridge)
-equal(repairedRecovery.choices[0]?.label, legacyRecoveryAction, 'a saved legacy recovery returns to the exact attempted route')
-ok(repairedRecovery.blocks.find((block) => block.id === 'consistency-recovery-6')?.text.includes(legacyRecoveryAction), 'a saved legacy recovery gains an action-specific explanation')
-equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-6')?.text ?? '')[0], legacyRecoveryAction, 'saved article and tray choices migrate together')
-equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-5')?.text ?? '')[0], '询问男子关于短发女人的更多细节', 'earlier visible recovery choices migrate with the latest turn')
+ok(!repairedRecovery.choices.some((choice) => choice.label === legacyRecoveryAction), 'a saved legacy recovery removes the previously failed route from quick replies')
+ok(repairedRecovery.blocks.find((block) => block.id === 'consistency-recovery-6')?.text.includes(initial.location), 'a saved legacy recovery gains a current-location explanation without promoting the failed action')
+equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-6')?.text ?? '')[0], repairedRecovery.choices[0].label, 'saved article and tray choices migrate together')
+ok(!decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-5')?.text ?? '').includes('询问男子关于短发女人的更多细节'), 'earlier visible recovery records also remove the failed route')
 equal(repairedRecovery.objective, legacyRecoveryAction, 'an objective polluted by the old action fallback is realigned to the latest intent')
-equal(repairLegacyConsistencyRecovery(repairedRecovery, cartridge).choices[0]?.label, legacyRecoveryAction, 'legacy recovery migration is idempotent')
+equal(repairLegacyConsistencyRecovery(repairedRecovery, cartridge).choices[0]?.label, repairedRecovery.choices[0]?.label, 'legacy recovery migration is idempotent')
 
 const screenshotOriginalAction = '留在码头接受搬运工作'
 const screenshotConfirmAction = '先在灯湾码头确认与这一步有关的路线和线索'
@@ -147,9 +149,9 @@ const screenshotLoop = {
   choices: createLoopChoices(2, screenshotConfirmAction, screenshotConfirmAction),
 }
 const repairedScreenshotLoop = repairLegacyConsistencyRecovery(screenshotLoop, cartridge)
-equal(repairedScreenshotLoop.choices[0]?.label, screenshotOriginalAction, 'the shipped duplicate recovery save migrates back to the original action')
-equal(new Set(repairedScreenshotLoop.choices.map((choice) => choice.label)).size, 3, 'the shipped duplicate recovery save receives three unique options')
-const migratedConfirm = resolveConsistencyRecoverySelection(repairedScreenshotLoop, cartridge, repairedScreenshotLoop.choices[1].label)
+ok(!repairedScreenshotLoop.choices.some((choice) => choice.label === screenshotOriginalAction || choice.label === screenshotConfirmAction), 'the shipped duplicate recovery save removes both looping actions')
+equal(new Set(repairedScreenshotLoop.choices.map((choice) => choice.label)).size, 2, 'the shipped duplicate recovery save receives two unique local exits')
+const migratedConfirm = resolveConsistencyRecoverySelection(repairedScreenshotLoop, cartridge, repairedScreenshotLoop.choices[0].label)
 equal(migratedConfirm?.originalAction, screenshotOriginalAction, 'the migrated local exit still remembers the original action')
 
 const valid = parseStoryProtocol(`你先回到月线车厢。列车停稳后，你在雾杉林下车，护林人林薇请你参加今晚的巡逻任务。
@@ -172,7 +174,7 @@ equal(filteredStaleChoices.choices.length, 2, 'only the impossible old-location 
 ok(!filteredStaleChoices.choices.some((choice) => choice.includes('灯湾码头')), 'known dead-end choice never reaches the tray')
 equal(validateTurnConsistency(initial, filteredStale.parsed, cartridge).length, 0, 'remaining valid choices commit without forcing a three-choice quota')
 
-const hiddenNoun = parseStoryProtocol(`你在灯湾码头查看当前的航班。
+const hiddenNoun = parseStoryProtocol(`你在灯湾码头查看当前航班和码头时刻表。
 [scene_location: location="灯湾码头"]
 [choices: "继续查看当前航班"|"询问尚未登场的森林王后"|"留在原地等待"|"检查码头时刻表"]`, 'zh')
 const filteredHiddenNoun = canonicalizeTurnMetadata(initial, hiddenNoun, cartridge)
@@ -180,6 +182,35 @@ const hiddenNounChoices = filteredHiddenNoun.parsed.commands.find((command) => c
 ok(hiddenNounChoices?.type === 'choices', 'grounded subset remains available')
 equal(hiddenNounChoices.choices.length, 3, 'one unintroduced-noun dead end is filtered from a four-choice set')
 ok(!hiddenNounChoices.choices.some((choice) => choice.includes('森林王后')), 'an unintroduced character cannot survive choice filtering')
+
+const partialOverlap = parseStoryProtocol(`码头边有人正在搬箱子，也有人招呼你来帮忙。
+[scene_location: location="灯湾码头"]
+[choices: "接受帮忙整理温室和搬运材料"|"帮忙搬码头边的箱子"]`, 'zh')
+const filteredPartialOverlap = canonicalizeTurnMetadata(initial, partialOverlap, cartridge)
+const partialChoices = filteredPartialOverlap.parsed.commands.find((command) => command.type === 'choices')
+ok(partialChoices?.type === 'choices', 'a strong grounded choice survives partial-overlap filtering')
+equal(partialChoices.choices.length, 1, 'a generic overlapping word cannot validate unknown objects')
+equal(partialChoices.choices[0], '帮忙搬码头边的箱子', 'the current-scene action remains')
+
+const omittedMapUpdate = parseStoryProtocol(`你穿过雨棚，走进杯影夜市。舞台旁的木箱已经搬到干燥处。
+[scene_location: location="杯影夜市"]
+[choices: "检查舞台旁的木箱"|"留在杯影夜市等待"]`, 'zh')
+const canonicalArrival = canonicalizeTurnMetadata(initial, omittedMapUpdate, cartridge)
+ok(canonicalArrival.parsed.commands.some((command) => command.type === 'map_update' && command.location === '杯影夜市'), 'visible arrival at a known place synthesizes the omitted map update')
+equal(validateTurnConsistency(initial, canonicalArrival.parsed, cartridge).length, 0, 'known visible arrival commits without blaming the player for missing model metadata')
+
+for (const openingCartridge of [listCartridges('zh')[0], listCartridges('en')[0]]) {
+  const openingSave = createInitialSave(openingCartridge)
+  for (const choice of openingSave.choices) {
+    const authored = resolveDeterministicOpeningTurn(openingSave, openingCartridge, choice.label)
+    ok(authored, `${openingCartridge.locale} opening choice ${choice.id} has a deterministic local turn`)
+    const paymentSafe = canonicalizePaymentMetadata(openingSave, parseStoryProtocol(authored.content, openingCartridge.locale), openingCartridge, choice.label)
+    const consistent = canonicalizeTurnMetadata(openingSave, paymentSafe, openingCartridge, authored.imagePrompt, choice.label, true)
+    equal(validatePaymentConsistency(openingSave, consistent.parsed, openingCartridge).length, 0, `${openingCartridge.locale} opening choice ${choice.id} satisfies payment state`)
+    equal(validateTurnConsistency(openingSave, consistent.parsed, openingCartridge, consistent.imagePrompt).length, 0, `${openingCartridge.locale} opening choice ${choice.id} satisfies turn state without a model repair`)
+  }
+}
+equal(resolveDeterministicOpeningTurn(initial, cartridge, '我想去一个没有出现过的太空港'), undefined, 'free input remains open and never gets mistaken for a deterministic button')
 
 const legacyChoices = [
   { id: 'old-0', label: '观察灯湾码头的新变化' },

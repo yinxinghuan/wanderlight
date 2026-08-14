@@ -68,8 +68,8 @@ export function canonicalizePaymentMetadata(
   const sentences = prose.split(/(?<=[。！？.!?])|\n+/).map((sentence) => sentence.trim()).filter(Boolean)
   const currency = /(?:钱币|铜板|铜币|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
   const received = cartridge.locale === 'zh'
-    ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|当场结清|已经结清|收到了?)/
-    : /(?:paid you|handed you|gave you|passed you|counted out|you received|payment (?:was|is) settled)/i
+    ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|(?:放进|放到|放入)你手里|当场付了|当场结清|已经结清|收到了?)/
+    : /(?:paid you|pays you|handed you|hands you|gave you|passed you|counted out|you received|places?.{0,32}(?:coins?|coppers?|crowns?|tokens?).{0,16}(?:in|into) your hand|payment (?:was|is) settled)/i
   const spent = cartridge.locale === 'zh'
     ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|从你[^。！？]{0,16}扣除)/
     : /(?:you paid|you handed over|was deducted from you)/i
@@ -133,8 +133,8 @@ export function validatePaymentConsistency(save: StorySave, parsed: ParsedScene,
   const sentences = prose.split(/(?<=[。！？.!?])|\n+/).map((sentence) => sentence.trim()).filter(Boolean)
   const currency = /(?:钱币|铜板|铜币|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
   const received = cartridge.locale === 'zh'
-    ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|当场结清|已经结清|收到了?)/
-    : /(?:paid you|handed you|gave you|passed you|counted out|you received|payment (?:was|is) settled)/i
+    ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|(?:放进|放到|放入)你手里|当场付了|当场结清|已经结清|收到了?)/
+    : /(?:paid you|pays you|handed you|hands you|gave you|passed you|counted out|you received|places?.{0,32}(?:coins?|coppers?|crowns?|tokens?).{0,16}(?:in|into) your hand|payment (?:was|is) settled)/i
   const spent = cartridge.locale === 'zh'
     ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|从你[^。！？]{0,16}扣除)/
     : /(?:you paid|you handed over|was deducted from you)/i

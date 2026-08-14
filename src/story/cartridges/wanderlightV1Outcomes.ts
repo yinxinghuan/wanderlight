@@ -44,8 +44,8 @@ This is not a promise that demands you stay. It is one shared road tomorrow, wit
 [widget: energy, remove: 10]
 [widget: coin, add: 9]
 [reputation: npc="罗温" action="worked-as-equals"]
-[choices: "答应明早和罗温检查雾杉支线"|"收下工钱，之后自己选路线"|"告诉罗温你今晚只想休息"]`
-    : `The potter on night duty asks you to adjust the kiln door's upper hinge. You hold the door while Rowan passes tools without taking the job away from you. When the door closes cleanly, the potter pays nine coin on the spot.
+[choices: "答应明早和罗温检查通往雾杉林的旧支线"|"收下工钱，之后自己选路线"|"告诉罗温你今晚只想休息"]`
+    : `The potter on night duty asks you to adjust the kiln door's upper hinge. You hold the door while Rowan passes tools without taking the job away from you. When the door closes cleanly, the potter pays you 9 coin on the spot.
 
 Rowan will inspect an old branch toward Mistpine Forest in the morning. He is willing to show you the route, but says plainly that it is not steward work and that he will not choose your next trade for you.
 
@@ -100,8 +100,8 @@ After the concert she will travel to another night market. She offers you the st
     { match: zh ? ['空凳', '坐到媛夕对面'] : ['empty stool', 'across from Mira'], content: miraBoundary },
     { match: zh ? ['清晨和媛夕', '调查葡萄藤'] : ["Mira's dawn", 'dawn vine survey'], content: miraCommitment, imagePrompt: 'Silverleaf Vineyard at first light, Mira Voss and the off-camera player preparing a field notebook and two survey cords beside moon-turning vines, Mira is the single clear identity owner, quiet mutual agreement, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'mira-voss' },
     { match: zh ? ['修窑门', '介绍修窑'] : ['kiln-door', 'kiln door'], content: rowanBoundary },
-    { match: zh ? ['雾杉支线', '明早和罗温'] : ["Rowan's morning", 'Mistpine branch'], content: rowanCommitment, imagePrompt: 'Far Lantern Institute guest corridor before dawn, Rowan Hale marking a route on a blank map edge and placing a measuring cord beside it, Rowan is the single clear identity owner, restrained mutual agreement, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'rowan-hale' },
-    { match: zh ? ['检查清晨演出场地', '清晨演出场地'] : ['check the dawn performance space', 'performance space'], content: celesteBoundary },
+    { match: zh ? ['雾杉支线', '雾杉林的旧支线', '明早和罗温'] : ["Rowan's morning", 'Mistpine branch'], content: rowanCommitment, imagePrompt: 'Far Lantern Institute guest corridor before dawn, Rowan Hale marking a route on a blank map edge and placing a measuring cord beside it, Rowan is the single clear identity owner, restrained mutual agreement, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'rowan-hale' },
+    { match: zh ? ['帮塞莱斯特试场', '试场'] : ['check the dawn performance space', 'performance space'], content: celesteBoundary },
     { match: zh ? ['下一站的布台', '接受塞莱斯特'] : ["Celeste's staging job", 'next market'], content: celesteCommitment, imagePrompt: 'Tidal Islands just after a dawn concert, Celeste Ardin closing one instrument case beside neatly stacked stage equipment, Celeste is the single clear identity owner, a practical new travel agreement, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'celeste-ardin' },
   ]
 }
