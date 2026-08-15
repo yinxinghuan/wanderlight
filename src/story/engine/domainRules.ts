@@ -1,6 +1,7 @@
 import type {
   DomainActionResolution, DomainEffect, DomainRequirement, ParsedCommand, StoryBlock, StoryCartridge, StorySave,
 } from '../types'
+import { decodeChoiceRecord, encodeChoiceRecord } from './choiceInput'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -92,6 +93,10 @@ function requirementMet(requirement: DomainRequirement, save: StorySave): boolea
     }
     return true
   }
+  if (requirement.type === 'capability') {
+    const current = currentMapNodeId(save)
+    return Boolean(current && save.map.find((node) => node.id === current)?.capabilities?.includes(requirement.id))
+  }
   if (requirement.type === 'stat') {
     const value = Number(save.stats[requirement.id])
     if (!Number.isFinite(value)) return false
@@ -136,6 +141,7 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
       reasons: [floor.rule.blockedText],
       successText: floor.rule.blockedText,
       successChoices: [...floor.rule.recoveryChoices],
+      continuation: 'replace',
     }
   }
   if (!candidate) return undefined
@@ -158,6 +164,9 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
     reasons,
     successText: candidate.rule.successText,
     dangerPolicy: candidate.rule.dangerPolicy,
+    continuation: accepted
+      ? candidate.rule.successContinuation ?? 'replace'
+      : candidate.rule.rejectionContinuation ?? 'replace',
     successChoices: [...(reasons.length && candidate.rule.rejectionChoices
       ? candidate.rule.rejectionChoices
       : candidate.rule.successChoices)],
@@ -273,9 +282,60 @@ export function repairEndedSessionChoices<T extends {
   } as T
 }
 
+/** Older builds replaced the active story thread with a cartridge-wide utility
+ * menu after any governed side action. Restore the preceding immutable choice
+ * record only for rules that now explicitly resume the same thread. */
+export function repairLegacyDomainChoiceReset(save: StorySave, cartridge: StoryCartridge): StorySave {
+  if (save.sessionEnded || save.facts['legacy-domain-choice-reset-repaired-v1'] === true) return save
+  const legacySets = cartridge.domainRules?.legacyChoiceSets ?? []
+  const live = save.choices.map((choice) => choice.label.trim())
+  const looksLegacy = live.length >= 2 && legacySets.some((set) => {
+    const labels = new Set(set.map((label) => label.trim()))
+    return live.every((label) => labels.has(label))
+  })
+  if (!looksLegacy) return save
+
+  const domainBlock = [...save.blocks].reverse().find((block) => (
+    block.data?.domainRule && block.data?.domainStatus
+    && (block.id === `domain-${save.scene}` || block.id.startsWith(`domain-${save.scene}-`))
+  ))
+  const ruleId = typeof domainBlock?.data?.domainRule === 'string' ? domainBlock.data.domainRule : ''
+  const status = domainBlock?.data?.domainStatus
+  const rule = cartridge.domainRules?.rules.find((entry) => entry.id === ruleId)
+  const continuation = status === 'rejected'
+    ? rule?.rejectionContinuation ?? 'replace'
+    : rule?.successContinuation ?? 'replace'
+  if (continuation !== 'resume') return save
+
+  const action = save.blocks.find((block) => block.id === `action-${save.scene}`)?.text.trim() ?? save.lastActionId?.trim() ?? ''
+  const previousRecord = save.blocks
+    .map((block) => ({ block, scene: block.kind === 'choices' ? Number(block.id.match(/^choices-(\d+)$/)?.[1] ?? -1) : -1 }))
+    .filter((entry) => entry.scene >= 0 && entry.scene < save.scene)
+    .sort((left, right) => right.scene - left.scene)[0]?.block
+  const previousLabels = previousRecord ? decodeChoiceRecord(previousRecord.text) : []
+  const restored = previousLabels
+    .filter((label) => label.trim() !== action)
+    .filter((label) => resolveDomainAction(save, cartridge, label)?.status !== 'rejected')
+    .map((label, index) => ({ id: `restored-thread-${save.scene}-${index}`, label }))
+  const recordId = `choices-${save.scene}`
+  const blocks = restored.length
+    ? save.blocks.map((block) => block.id === recordId && block.kind === 'choices'
+      ? { ...block, text: encodeChoiceRecord(restored) }
+      : block)
+    : save.blocks.filter((block) => block.id !== recordId)
+  return {
+    ...save,
+    choices: restored,
+    blocks,
+    facts: { ...save.facts, 'legacy-domain-choice-reset-repaired-v1': true },
+  }
+}
+
 export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge, resolution?: DomainActionResolution): StoryBlock[] {
   if (!resolution) return []
-  save.choices = resolution.successChoices.map((label, index) => ({ id: `domain-${save.scene}-${index}`, label }))
+  save.choices = resolution.continuation === 'replace'
+    ? resolution.successChoices.map((label, index) => ({ id: `domain-${save.scene}-${index}`, label }))
+    : []
   if (resolution.status === 'rejected') {
     return [{
       id: `domain-${save.scene}`,

@@ -243,6 +243,7 @@ export function localizeKnownState(save: StorySave, from: StoryCartridge, to: St
     return target ? {
       ...node, label: target.label, connectedTo: connectedId ? targetNodeById.get(connectedId)?.label : node.connectedTo,
       detail: target.detail ?? node.detail, lore: target.lore ?? node.lore, facts: target.facts ?? node.facts,
+      capabilities: target.capabilities ?? node.capabilities,
     } : node
   })
   const locationId = sourceNodeByLabel.get(save.location)
@@ -694,7 +695,7 @@ export function applyParsedScene(
     stats: { ...save.stats },
     facts: { ...save.facts },
     danger: normalizeDangerState(save.danger),
-    decisionContext: '', sessionEnded: false, lastActionId: actionId,
+    decisionContext: domainResolution?.continuation === 'resume' ? save.decisionContext : '', sessionEnded: false, lastActionId: actionId,
   }
   delete next.facts.consistency_quarantined_action
   delete next.facts.consistency_quarantined_location

@@ -17,3 +17,9 @@ export function getGameUuid(): string | null {
   const meta = typeof document !== 'undefined' ? document.querySelector('meta[name="game-uuid"]') : null
   return meta?.getAttribute('content') || null
 }
+
+/** Same-origin base for game-owned Worker routes after Remix UUID replacement. */
+export function getGameApiBase(): string {
+  const uuid = getGameUuid()
+  return uuid ? `/${uuid}` : ''
+}

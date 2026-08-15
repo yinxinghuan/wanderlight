@@ -18,6 +18,7 @@
     "test:pipeline": "node --import tsx public-tests/turn-pipeline.ts",
     "test:deterministic-choices": "node --import tsx public-tests/deterministic-choice-turns.ts",
     "test:domain": "node --import tsx public-tests/domain-choice-availability.ts",
+    "test:domain-continuity": "node --import tsx public-tests/domain-thread-continuity.ts",
     "test:image-director": "node --import tsx public-tests/image-director.ts",
     "test:resume": "node --import tsx public-tests/reading-anchor.ts",
     "test:audio": "node --import tsx public-tests/audio-synth.ts",

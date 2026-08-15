@@ -69,7 +69,7 @@ export const SCENE_IMAGE_PROMPT_VERSION = 6
 export type SceneImageSubject = 'player' | 'environment' | 'others'
 export interface StoryBlock { id: string; kind: 'narration' | 'dialogue' | 'check' | 'change' | 'event' | 'summary' | 'image' | 'choices'; text: string; speaker?: string; tone?: string; data?: Record<string, string | number> }
 export interface EntityMetric { id?: string; label: string; value: string }
-export interface MapNode { id: string; label: string; connectedTo?: string; current?: boolean; visited?: boolean; detail?: string; lore?: string; facts?: string[]; routeHints?: string[] }
+export interface MapNode { id: string; label: string; connectedTo?: string; current?: boolean; visited?: boolean; detail?: string; lore?: string; facts?: string[]; routeHints?: string[]; capabilities?: string[] }
 export interface InventoryItem {
   id: string
   label: string
@@ -136,6 +136,7 @@ export interface StoryDangerState {
 
 export type DomainRequirement =
   | { type: 'map'; nodeId?: string; notNodeId?: string; visited?: boolean; reason: string }
+  | { type: 'capability'; id: string; reason: string }
   | { type: 'stat'; id: string; min?: number; max?: number; reason: string }
   | { type: 'fact'; id: string; equals?: StoryFactValue; notEquals?: StoryFactValue; min?: number; max?: number; reason: string }
   | { type: 'item'; id: string; minCount: number; reason: string }
@@ -160,6 +161,8 @@ export interface DomainActionRule {
   matchMode?: 'contains' | 'exact'
   intentGuard?: 'rest-commitment'
   dangerPolicy?: 'advance' | 'suppress' | 'withdraw'
+  successContinuation?: 'replace' | 'resume' | 'derive' | 'checkpoint'
+  rejectionContinuation?: 'replace' | 'resume' | 'derive'
   repeatPolicy?: { scope: 'location-day'; reason: string }
   requirements: DomainRequirement[]
   effects: DomainEffect[]
@@ -174,6 +177,7 @@ export type DomainDerivedFact =
 export interface DomainObjectiveTransition { from: string; to: string; requirements: DomainRequirement[] }
 export interface StoryDomainRules {
   rules: DomainActionRule[]
+  legacyChoiceSets?: string[][]
   derivedItemMetrics?: DomainDerivedItemMetric[]
   derivedFacts?: DomainDerivedFact[]
   objectiveTransitions?: DomainObjectiveTransition[]
@@ -186,6 +190,7 @@ export interface DomainActionResolution {
   reasons: string[]
   successText: string
   successChoices: string[]
+  continuation: 'replace' | 'resume' | 'derive' | 'checkpoint'
   dangerPolicy?: DomainActionRule['dangerPolicy']
 }
 
