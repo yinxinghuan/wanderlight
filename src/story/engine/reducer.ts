@@ -6,7 +6,7 @@ import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices }
 import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
 import { resolveDeterministicChoiceTurn } from './authoredTurns'
-import { inferActionDestination } from './turnConsistency'
+import { bindChoiceDestinations, inferActionDestination, mergeRouteHints, playerDeclaredLocationAlias, stableDynamicLocationId, validatedDynamicRouteHints } from './turnConsistency'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -21,7 +21,7 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
     stats: Object.fromEntries(cartridge.statDefinitions.map((stat) => [stat.id, stat.initial])),
     facts: { ...(cartridge.initialFacts ?? {}) },
     blocks: [...cartridge.opening.blocks, createImageBlock('image-0', cartridge.opening.location, cartridge.opening.imagePrompt, 'idle'), createChoiceRecordBlock(0, cartridge.opening.choices)],
-    choices: cartridge.opening.choices, map: cartridge.initialMap.map((node) => ({ ...node, visited: node.visited ?? Boolean(node.current), facts: node.facts ? [...node.facts] : undefined })),
+    choices: cartridge.opening.choices, map: cartridge.initialMap.map((node) => ({ ...node, visited: node.visited ?? Boolean(node.current), facts: node.facts ? [...node.facts] : undefined, routeHints: node.routeHints ? [...node.routeHints] : undefined })),
     inventory: cartridge.initialInventory.map((item) => ({ ...item, metrics: item.metrics?.map((metric) => ({ ...metric })), imageStatus: item.imageUrl ? 'ready' : 'idle' })),
     characters: cartridge.characters.filter((character) => !character.hiddenUntilIntroduced).map((character) => {
       const state = characterFromDefinition(character)
@@ -33,6 +33,7 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
     danger: createInitialDangerState(),
     sessionEnded: false,
   }
+  initial.choices = bindChoiceDestinations(initial.choices, initial, cartridge)
   return syncDomainDerivedState(initial, cartridge)
 }
 
@@ -465,8 +466,8 @@ export function applyDisplayedRouteFallback(
     blocks: [{ id: `route-fallback-${save.scene + 1}`, kind: 'narration', text }],
     commands: [
       {
-        type: 'map_update', location: destination.label, connectedTo: destination.connectedTo,
-        detail: destination.detail, lore: destination.lore, facts: destination.facts,
+        type: 'map_update', location: destination.label, locationId: destination.id, connectedTo: destination.connectedTo,
+        detail: destination.detail, lore: destination.lore, facts: destination.facts, routeHints: destination.routeHints,
       },
       { type: 'scene_location', location: destination.label },
       { type: 'choices', choices: choices.map((choice) => choice.label) },
@@ -700,6 +701,11 @@ export function applyParsedScene(
   }
   delete next.facts.consistency_quarantined_action
   delete next.facts.consistency_quarantined_location
+  const declaredAlias = playerDeclaredLocationAlias(actionId, cartridge.locale)
+  if (declaredAlias) {
+    const sourceNode = next.map.find((node) => node.current || node.label === save.location)
+    if (sourceNode) sourceNode.routeHints = mergeRouteHints(sourceNode.routeHints, [declaredAlias])
+  }
   const visibleTurnText = parsed.blocks
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .map((block) => block.text.trim()).filter(Boolean).join(' ')
@@ -746,8 +752,11 @@ export function applyParsedScene(
       if (day) next.facts.world_day = Math.max(1, Number(day[1] ?? day[2]))
     }
     if (command.type === 'map_update') {
-      next.map.forEach((node) => { node.current = false })
-      const existing = next.map.find((node) => node.label === command.location || node.id === command.location)
+      const beforeLocation = next.location
+      const hints = validatedDynamicRouteHints(command, parsed)
+      const existing = next.map.find((node) => node.id === command.locationId || node.label === command.location || node.id === command.location)
+      const destinationId = existing?.id ?? command.locationId ?? stableDynamicLocationId(command.location)
+      next.map.forEach((node) => { node.current = node.id === destinationId })
       if (existing) {
         existing.current = true
         existing.visited = true
@@ -755,13 +764,14 @@ export function applyParsedScene(
         if (command.detail) existing.detail = command.detail
         if (command.lore) existing.lore = command.lore
         if (command.facts) existing.facts = command.facts
+        existing.routeHints = mergeRouteHints(existing.routeHints, hints)
       } else next.map.push({
-        id: `map-${next.scene}-${index}`, label: command.location, connectedTo: command.connectedTo, current: true, visited: true,
-        detail: command.detail, lore: command.lore, facts: command.facts,
+        id: destinationId, label: command.location, connectedTo: command.connectedTo, current: true, visited: true,
+        detail: command.detail, lore: command.lore, facts: command.facts, routeHints: hints,
       })
       next.location = command.location
       next.sceneLocation = command.location
-      effects.push({ id: effectId, kind: 'event', text: t(cartridge.locale, 'arrived', { name: command.location }), data: { arrival: command.location } })
+      if (beforeLocation !== command.location) effects.push({ id: effectId, kind: 'event', text: t(cartridge.locale, 'arrived', { name: command.location }), data: { arrival: command.location, locationId: destinationId } })
     }
     if (command.type === 'scene_location') next.sceneLocation = command.location
     if (command.type === 'inventory') {
@@ -858,7 +868,7 @@ export function applyParsedScene(
     const textGrounded = new Set(filterGroundedChoices(next.choices, { ...next, blocks: [...next.blocks, ...effects] }, cartridge, [...parsed.blocks, ...effects]).map((choice) => choice.label))
     next.choices = next.choices.filter((choice) => {
       const domain = resolveDomainAction(next, cartridge, choice.label)
-      return domain ? domain.status === 'accepted' : textGrounded.has(choice.label)
+      return domain ? domain.status === 'accepted' : Boolean(inferActionDestination(next, cartridge, choice.label)) || textGrounded.has(choice.label)
     })
   }
   if (!next.sessionEnded && next.choices.length === 0) {
@@ -881,6 +891,8 @@ export function applyParsedScene(
     next.choices = statFloorChoices(next, cartridge) ?? next.choices
   }
 
+  if (!next.sessionEnded && next.choices.length) next.choices = bindChoiceDestinations(next.choices, next, cartridge)
+
   const domainImageNode = domainMap?.type === 'map'
     ? (next.map.find((node) => node.id === domainMap.nodeId) ?? cartridge.initialMap.find((node) => node.id === domainMap.nodeId))
     : undefined
@@ -888,8 +900,8 @@ export function applyParsedScene(
     ? {
         ...adjudicatedParsed,
         commands: [{
-          type: 'map_update', location: domainImageNode.label, connectedTo: domainImageNode.connectedTo,
-          detail: domainImageNode.detail, lore: domainImageNode.lore, facts: domainImageNode.facts,
+          type: 'map_update', location: domainImageNode.label, locationId: domainImageNode.id, connectedTo: domainImageNode.connectedTo,
+          detail: domainImageNode.detail, lore: domainImageNode.lore, facts: domainImageNode.facts, routeHints: domainImageNode.routeHints,
         }],
       }
     : adjudicatedParsed

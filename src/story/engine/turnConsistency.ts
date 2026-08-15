@@ -1,7 +1,7 @@
 import { encodeChoiceRecord } from './choiceInput'
 import { filterGroundedChoices } from './continuity'
 import { resolveDomainAction } from './domainRules'
-import type { MapNode, ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
+import type { Choice, MapNode, ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
 
 function clean(value: string): string {
   return value.toLocaleLowerCase().replace(/[\s，。！？、,.!?;；:："“”'‘’()（）\-—_/]+/g, '')
@@ -12,15 +12,15 @@ function effectiveLocation(save: StorySave, parsed: ParsedScene): string {
   return update?.type === 'map_update' ? update.location : save.location
 }
 
-function sceneBelongsToMapLocation(sceneLocation: string, mapLocation: string, save: StorySave, cartridge: StoryCartridge): boolean {
+function sceneBelongsToMapLocation(sceneLocation: string, mapLocation: string, save: StorySave, cartridge: StoryCartridge, proposedHints: string[] = []): boolean {
   const scene = clean(sceneLocation)
   const map = clean(mapLocation)
   if (scene === map || scene.includes(map)) return true
   const node = mapNodes(save, cartridge).find((candidate) => clean(candidate.label) === map)
-  return Boolean(node?.routeHints?.some((hint) => {
+  return [...(node?.routeHints ?? []), ...proposedHints].some((hint) => {
     const normalized = clean(hint)
     return normalized.length >= 2 && scene.includes(normalized)
-  }))
+  })
 }
 
 function mapNodes(save: Pick<StorySave, 'map'>, cartridge: Pick<StoryCartridge, 'initialMap'>): MapNode[] {
@@ -50,6 +50,74 @@ function routeMatchScore(value: string, node: MapNode): number {
   return score
 }
 
+const genericRouteHint = /^(?:这里|那里|附近|周围|地点|地方|区域|场景|当前地点|新地点|here|there|nearby|around|place|location|area|scene|current place|new place)$/i
+
+/** A deterministic id for model-created places. Existing saved ids always win;
+ * this fallback prevents retry/reload from creating a second node for the same
+ * canonical label. */
+export function stableDynamicLocationId(location: string): string {
+  const normalized = clean(location) || 'place'
+  let hash = 2166136261
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash ^= normalized.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `dynamic-location-${(hash >>> 0).toString(36)}`
+}
+
+/** Keep only aliases proved by the visible turn or its structured public map
+ * description. Hidden prompt-only aliases are discarded. */
+export function validatedDynamicRouteHints(command: Extract<ParsedCommand, { type: 'map_update' }>, parsed: ParsedScene): string[] {
+  const visible = [
+    visibleProse(parsed), command.location, command.detail, command.lore,
+    ...(command.facts ?? []),
+    ...parsed.commands.filter((entry): entry is Extract<ParsedCommand, { type: 'scene_location' }> => entry.type === 'scene_location').map((entry) => entry.location),
+  ].filter(Boolean).join('\n')
+  const visibleClean = clean(visible)
+  const seen = new Set<string>()
+  return [command.location, ...(command.routeHints ?? [])]
+    .map((hint) => hint.trim())
+    .filter((hint) => {
+      const normalized = clean(hint)
+      if (normalized.length < 2 || normalized.length > 48 || genericRouteHint.test(hint.trim()) || seen.has(normalized)) return false
+      if (clean(command.location) !== normalized && !visibleClean.includes(normalized)) return false
+      seen.add(normalized)
+      return true
+    })
+    .slice(0, 8)
+}
+
+export function mergeRouteHints(...groups: Array<string[] | undefined>): string[] | undefined {
+  const seen = new Set<string>()
+  const merged = groups.flatMap((group) => group ?? []).map((hint) => hint.trim()).filter((hint) => {
+    const normalized = clean(hint)
+    if (normalized.length < 2 || genericRouteHint.test(hint) || seen.has(normalized)) return false
+    seen.add(normalized)
+    return true
+  }).slice(0, 8)
+  return merged.length ? merged : undefined
+}
+
+export function repairPersistedMapRouteHints(
+  map: MapNode[],
+  sceneLocation: string | undefined,
+  blocks: StorySave['blocks'],
+  cartridge: Pick<StoryCartridge, 'initialMap'>,
+): MapNode[] {
+  const definitions = new Map(cartridge.initialMap.map((node) => [node.id, node]))
+  const recent = blocks.slice(-80).filter((block) => block.kind === 'narration' || block.kind === 'dialogue').map((block) => clean(block.text)).join('\n')
+  return map.map((node) => {
+    const definition = definitions.get(node.id)
+    let currentSceneHint: string | undefined
+    if (node.current && sceneLocation && clean(sceneLocation) !== clean(node.label)) {
+      const scene = clean(sceneLocation)
+      const label = clean(node.label)
+      if (scene.includes(label) || (recent.includes(label) && recent.includes(scene))) currentSceneHint = sceneLocation
+    }
+    return { ...node, routeHints: mergeRouteHints(definition?.routeHints, node.routeHints, [node.label], currentSceneHint ? [currentSceneHint] : undefined) }
+  })
+}
+
 /** Resolve a system/free-input route to a stable map id before generation.
  * The route must contain both an actual movement/commitment cue and a unique
  * destination fingerprint; merely discussing a remote place does not move. */
@@ -62,6 +130,21 @@ export function inferActionDestination(save: StorySave, cartridge: StoryCartridg
     .sort((a, b) => b.score - a.score)
   if (!candidates.length || candidates[0].score === candidates[1]?.score) return undefined
   return candidates[0].node
+}
+
+export function bindChoiceDestinations(choices: Choice[], save: StorySave, cartridge: StoryCartridge): Choice[] {
+  return choices.map((choice) => {
+    const destination = inferActionDestination(save, cartridge, choice.label)
+    return destination ? { ...choice, targetLocationId: destination.id } : { ...choice, targetLocationId: undefined }
+  })
+}
+
+export function playerDeclaredLocationAlias(action: string, locale: StoryCartridge['locale']): string | undefined {
+  const match = locale === 'zh'
+    ? action.match(/(?:我(?:要|决定|以后)?|从现在起)?把这里(?:正式)?(?:叫作|叫做|命名为|称为)[“"']?([^”"'，。！？]{2,24})/)
+    : action.match(/\bI\s+(?:(?:will|want to|decide to)\s+)?(?:call|name)\s+(?:this place|this area|here)\s+["']?([^"'.!?]{2,40})/i)
+  const alias = match?.[1]?.trim()
+  return alias && !genericRouteHint.test(alias) ? alias : undefined
 }
 
 function inferVisibleDestination(save: StorySave, cartridge: StoryCartridge, parsed: ParsedScene): MapNode | undefined {
@@ -148,8 +231,8 @@ export function canonicalizeTurnMetadata(
       && /(?:抵达|到达|来到|走进|进入|已经在|身处|下车|穿过.+(?:走进|进入)|arriv|reach|enter|step into|now in|get off|cross.+into)/i.test(sentence))
     if (destination && visiblyArrived) {
       commands = [...commands, {
-        type: 'map_update', location: destination.label, connectedTo: destination.connectedTo,
-        detail: destination.detail, lore: destination.lore, facts: destination.facts,
+        type: 'map_update', location: destination.label, locationId: destination.id, connectedTo: destination.connectedTo,
+        detail: destination.detail, lore: destination.lore, facts: destination.facts, routeHints: destination.routeHints,
       }]
       hasMapUpdate = true
     }
@@ -162,8 +245,8 @@ export function canonicalizeTurnMetadata(
       commands = commands.filter((command) => command.type !== 'scene_location'
         || sceneBelongsToMapLocation(command.location, destination.label, save, cartridge))
       commands = [...commands, {
-        type: 'map_update', location: destination.label, connectedTo: destination.connectedTo,
-        detail: destination.detail, lore: destination.lore, facts: destination.facts,
+        type: 'map_update', location: destination.label, locationId: destination.id, connectedTo: destination.connectedTo,
+        detail: destination.detail, lore: destination.lore, facts: destination.facts, routeHints: destination.routeHints,
       }]
       hasMapUpdate = true
     }
@@ -227,9 +310,18 @@ export function canonicalizeTurnMetadata(
       const sceneLocationUpdate = [...commands].reverse().find((entry): entry is Extract<ParsedCommand, { type: 'scene_location' }> => entry.type === 'scene_location')
       const offeredJobs = commands.filter((entry): entry is Extract<ParsedCommand, { type: 'job' }> => entry.type === 'job' && entry.action === 'offer')
       const groundedMap = mapUpdate
-        ? save.map.map((node) => clean(node.label) === clean(mapUpdate.location)
-          ? { ...node, current: true, visited: true, detail: mapUpdate.detail ?? node.detail, lore: mapUpdate.lore ?? node.lore, facts: mapUpdate.facts ?? node.facts }
-          : { ...node, current: false })
+        ? (() => {
+            const hints = validatedDynamicRouteHints(mapUpdate, { ...parsed, commands })
+            const map = save.map.map((node) => (node.id === mapUpdate.locationId || clean(node.label) === clean(mapUpdate.location))
+              ? { ...node, current: true, visited: true, detail: mapUpdate.detail ?? node.detail, lore: mapUpdate.lore ?? node.lore, facts: mapUpdate.facts ?? node.facts, routeHints: mergeRouteHints(node.routeHints, hints) }
+              : { ...node, current: false })
+            if (!map.some((node) => node.current)) map.push({
+              id: mapUpdate.locationId ?? stableDynamicLocationId(mapUpdate.location), label: mapUpdate.location,
+              connectedTo: mapUpdate.connectedTo, current: true, visited: true, detail: mapUpdate.detail,
+              lore: mapUpdate.lore, facts: mapUpdate.facts, routeHints: hints,
+            })
+            return map
+          })()
         : save.map
       const candidateSave = {
         ...save,
@@ -249,7 +341,7 @@ export function canonicalizeTurnMetadata(
       const textGrounded = new Set(filterGroundedChoices(candidates, candidateSave, cartridge, parsed.blocks).map((choice) => choice.label))
       const grounded = candidates.filter((choice) => {
         const domain = resolveDomainAction(candidateSave, cartridge, choice.label)
-        return domain ? domain.status === 'accepted' : textGrounded.has(choice.label)
+        return domain ? domain.status === 'accepted' : Boolean(inferActionDestination(candidateSave, cartridge, choice.label)) || textGrounded.has(choice.label)
       }).map((choice) => choice.label)
       if (grounded.length !== command.choices.length || grounded.some((label, index) => label !== command.choices[index])) {
         commands = commands.map((entry, index) => index === choiceIndex ? { type: 'choices' as const, choices: grounded } : entry)
@@ -313,8 +405,18 @@ export function validateTurnConsistency(
   const prose = visibleProse(parsed)
 
   if (sceneLocations.length !== 1) violations.add('turn.requires_one_scene_location')
-  else if (!sceneBelongsToMapLocation(sceneLocations[0].location, location, save, cartridge)) violations.add('turn.scene_location_must_match_state')
+  else if (!sceneBelongsToMapLocation(
+    sceneLocations[0].location,
+    location,
+    save,
+    cartridge,
+    mapUpdates.length === 1 && mapUpdates[0].type === 'map_update' ? validatedDynamicRouteHints(mapUpdates[0], parsed) : [],
+  )) violations.add('turn.scene_location_must_match_state')
   if (mapUpdates.length > 1) violations.add('turn.allows_one_map_update')
+  if (mapUpdates.length === 1 && mapUpdates[0].type === 'map_update' && mapUpdates[0].locationId) {
+    const existing = mapNodes(save, cartridge).find((node) => node.id === mapUpdates[0].locationId)
+    if (existing && clean(existing.label) !== clean(mapUpdates[0].location)) violations.add('turn.location_id_cannot_rename_place')
+  }
 
   if (imagePrompt) {
     if (imageLocations.length !== 1) violations.add('image.requires_one_image_location')

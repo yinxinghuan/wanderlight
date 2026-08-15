@@ -47,6 +47,11 @@ function stableCharacterId(value: string | undefined): string | undefined {
   return clean && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(clean) && clean.length <= 64 ? clean : undefined
 }
 
+function stableLocationId(value: string | undefined): string | undefined {
+  const clean = value?.trim().toLowerCase()
+  return clean && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(clean) && clean.length <= 80 ? clean : undefined
+}
+
 function parseChoices(source: string): string[] {
   const body = source.replace(/^\s*choices\s*:/i, '').replace(/\]\s*$/, '').trim()
   const values: string[] = []
@@ -175,8 +180,10 @@ function parseCommand(name: string, source: string, locale: Locale): ParsedComma
     case 'state': return { type: 'state', value: boundedText(data.value ?? source.replace(/^\s*state\s*:/i, ''), 240) ?? '' }
     case 'clock': return { type: 'clock', value: boundedText(data.value ?? source.replace(/^\s*clock\s*:/i, ''), 80) ?? '' }
     case 'map_update': return data.new_location || data.location ? {
-      type: 'map_update', location: boundedText(data.new_location ?? data.location, 80)!, connectedTo: boundedText(data.connected_to, 80),
+      type: 'map_update', location: boundedText(data.new_location ?? data.location, 80)!,
+      locationId: stableLocationId(data.location_id ?? data.id), connectedTo: boundedText(data.connected_to, 80),
       detail: boundedText(data.detail, 300), lore: boundedText(data.lore, 600), facts: parseList(data.facts, 8, 180),
+      routeHints: parseList(data.route_hints ?? data.aliases, 8, 48),
     } : null
     case 'inventory': {
       const rarity = data.rarity === 'rare' || data.rarity === 'legendary' ? data.rarity : data.rarity === 'common' ? 'common' : undefined

@@ -61,7 +61,7 @@ export interface StoryCharacter extends CharacterDefinition {
   joinedAtScene?: number
   leftAtScene?: number
 }
-export interface Choice { id: string; label: string }
+export interface Choice { id: string; label: string; targetLocationId?: string }
 export type ImageBlockStatus = 'idle' | 'queued' | 'generating' | 'ready' | 'failed'
 export const ITEM_IMAGE_STYLE_VERSION = 3
 export const SCENE_IMAGE_PROMPT_VERSION = 6
@@ -301,7 +301,7 @@ export type ParsedCommand =
   | { type: 'skill_check'; skill: string; dc: number; roll: number; modifier: number; total: number; result: string }
   | { type: 'state'; value: string }
   | { type: 'clock'; value: string }
-  | { type: 'map_update'; location: string; connectedTo?: string; detail?: string; lore?: string; facts?: string[] }
+  | { type: 'map_update'; location: string; locationId?: string; connectedTo?: string; detail?: string; lore?: string; facts?: string[]; routeHints?: string[] }
   | { type: 'inventory'; action: 'add' | 'remove'; item: string; count: number; rarity?: 'common' | 'rare' | 'legendary'; detail?: string; effect?: string; lore?: string; metrics?: EntityMetric[]; imagePrompt?: string }
   | { type: 'job'; action: 'offer' | 'accept' | 'settle' | 'cancel'; id: string; label?: string; employer?: string; wage?: number }
   | { type: 'scene_location'; location: string }

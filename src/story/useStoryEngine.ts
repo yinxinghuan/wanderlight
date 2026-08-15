@@ -9,7 +9,7 @@ import { resolveCartridge } from './cartridges'
 import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment } from './engine/paymentConsistency'
-import { canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence } from './engine/turnConsistency'
+import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence, repairPersistedMapRouteHints } from './engine/turnConsistency'
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
@@ -120,14 +120,14 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     }
   })
   const initialPlaces = new Map(cartridge.initialMap.map((node) => [node.id, node]))
-  const map = (repaired.map ?? cartridge.initialMap).map((node) => {
+  const map = repairPersistedMapRouteHints((repaired.map ?? cartridge.initialMap).map((node) => {
     const definition = initialPlaces.get(node.id)
     return {
       ...definition, ...node,
       visited: node.visited ?? Boolean(node.current || node.id.startsWith('map-')),
       detail: node.detail ?? definition?.detail, lore: node.lore ?? definition?.lore, facts: node.facts ?? definition?.facts,
     }
-  })
+  }), repaired.sceneLocation ?? repaired.location, repaired.blocks, cartridge)
   const characterState = normalizeCharacterState(repaired, cartridge)
   let normalized = {
     ...repaired, ...characterState, version: 10, locale: repaired.locale ?? cartridge.locale,
@@ -148,6 +148,7 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     }
     normalized.blocks = normalized.blocks.filter((block) => block.id !== `choices-${normalized.scene}`)
   }
+  if (!normalized.sessionEnded && normalized.choices.length) normalized.choices = bindChoiceDestinations(normalized.choices, normalized, cartridge)
   if (!normalized.sessionEnded && normalized.choices.length && !normalized.blocks.some((block) => block.id === `choices-${normalized.scene}`)) {
     normalized.blocks = [...normalized.blocks, createChoiceRecordBlock(normalized.scene, normalized.choices)]
   }
@@ -305,8 +306,13 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
     try {
       const adapter = mode === 'remote' ? remoteAdapter : mode === 'aigram' ? aigramAdapter : mockAdapter
       const base = localizeKnownState(saveRef.current, cartridge, activeCartridge)
-      const displayedRouteDestination = base.choices.some((choice) => choice.label.trim() === normalizedAction)
-        ? inferActionDestination(base, activeCartridge, normalizedAction)
+      const selectedDisplayedChoice = base.choices.find((choice) => choice.label.trim() === normalizedAction)
+      const displayedRouteDestination = selectedDisplayedChoice
+        ? (selectedDisplayedChoice.targetLocationId
+            ? base.map.find((node) => node.id === selectedDisplayedChoice.targetLocationId)
+              ?? activeCartridge.initialMap.find((node) => node.id === selectedDisplayedChoice.targetLocationId)
+            : undefined)
+          ?? inferActionDestination(base, activeCartridge, normalizedAction)
         : undefined
       const recoverySelection = resolveConsistencyRecoverySelection(base, activeCartridge, normalizedAction)
       if (recoverySelection) {

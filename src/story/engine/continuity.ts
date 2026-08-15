@@ -47,7 +47,7 @@ function chineseTerms(value: string): string[] {
 }
 
 function englishTerms(value: string): string[] {
-  const generic = new Set(['with', 'from', 'into', 'about', 'around', 'again', 'next', 'current', 'situation', 'continue', 'inspect', 'observe', 'check', 'ask', 'tell', 'help', 'return', 'follow', 'leave', 'wait', 'take', 'make', 'try', 'use', 'look', 'move'])
+  const generic = new Set(['with', 'from', 'into', 'about', 'around', 'again', 'next', 'current', 'situation', 'continue', 'inspect', 'observe', 'check', 'ask', 'tell', 'help', 'return', 'follow', 'leave', 'wait', 'take', 'make', 'try', 'use', 'look', 'move', 'join', 'finish', 'decline', 'accept', 'agree', 'choose', 'rent', 'stay', 'begin', 'start', 'flatten', 'pocket', 'trace', 'discuss', 'investigate', 'survey'])
   return [...new Set(value.toLocaleLowerCase().match(/[a-z]{4,}/g) ?? [])].filter((term) => !generic.has(term))
 }
 
@@ -84,7 +84,6 @@ function choiceIsGrounded(
     return reachable.has(normalized.length)
   }
   const matches = terms.filter((term) => sources.some((candidate) => clean(candidate).includes(clean(term))) || canSegmentFromSources(term))
-  if (locale === 'en') return matches.length > 0
   return matches.length === terms.length
 }
 

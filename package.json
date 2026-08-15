@@ -14,6 +14,7 @@
     "test:choices": "node --import tsx public-tests/choice-contract.ts",
     "test:payment": "node --import tsx public-tests/payment-consistency.ts",
     "test:turn": "node --import tsx public-tests/turn-consistency.ts",
+    "test:dynamic-locations": "node --import tsx public-tests/dynamic-location-continuity.ts",
     "test:pipeline": "node --import tsx public-tests/turn-pipeline.ts",
     "test:deterministic-choices": "node --import tsx public-tests/deterministic-choice-turns.ts",
     "test:domain": "node --import tsx public-tests/domain-choice-availability.ts",
