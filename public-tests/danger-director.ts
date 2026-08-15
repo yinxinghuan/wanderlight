@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
-import { wanderlight } from '../src/story/cartridges/wanderlight'
-import { buildDangerDirective } from '../src/story/engine/dangerDirector'
-import { applyParsedScene, createInitialSave } from '../src/story/engine/reducer'
+import { wanderlight, wanderlightEn } from '../src/story/cartridges/wanderlight'
+import { buildDangerDirective, repairLegacyDangerMethodChoices } from '../src/story/engine/dangerDirector'
+import { applyParsedScene, createChoiceRecordBlock, createInitialSave } from '../src/story/engine/reducer'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 
 const initial = createInitialSave(wanderlight)
@@ -37,4 +37,24 @@ const replylessWarning = applyParsedScene(checkpoint, parseStoryProtocol(`公告
 assert.deepEqual(replylessWarning.choices.map((choice) => choice.label), [...warning.methods], 'a replyless danger turn uses configured response methods instead of generic recovery choices')
 assert.equal(replylessWarning.choices.some((choice) => choice.label.includes('追查“')), false)
 
-console.log(JSON.stringify({ ok: true, checks: ['location-varied-threat-selection', 'active-threat-stability', 'replyless-danger-methods'] }))
+assert.deepEqual(wanderlight.dangerDirector?.methods, [
+  '先问清楚发生了什么',
+  '冒险继续原来的计划',
+  '先退一步，换个办法',
+], '固定危险选项必须是玩家能直接理解的行动')
+
+const legacyMethods = ['询问并理解警告', '承担代价保护承诺', '撤退、改道或设定边界']
+const legacySave = {
+  ...initial,
+  scene: 12,
+  facts: { ...initial.facts },
+  choices: legacyMethods.map((label, index) => ({ id: `legacy-danger-${index}`, label })),
+  blocks: [...initial.blocks, createChoiceRecordBlock(12, legacyMethods.map((label, index) => ({ id: `legacy-danger-${index}`, label })))],
+}
+const migrated = repairLegacyDangerMethodChoices(legacySave, wanderlight)
+assert.deepEqual(migrated.choices.map((choice) => choice.label), wanderlight.dangerDirector?.methods, '旧存档的当前危险选项必须换成新文案')
+assert.deepEqual(JSON.parse(migrated.blocks.find((block) => block.id === 'choices-12')!.text), wanderlight.dangerDirector?.methods, '正文中的当前选项记录必须同步迁移')
+assert.equal(migrated.facts['legacy-danger-method-copy-repaired-v1'], true)
+assert.deepEqual(repairLegacyDangerMethodChoices(legacySave, wanderlightEn).choices.map((choice) => choice.label), wanderlightEn.dangerDirector?.methods, '切换语言时也必须把另一种语言的旧文案迁移到当前语言')
+
+console.log(JSON.stringify({ ok: true, checks: ['location-varied-threat-selection', 'active-threat-stability', 'replyless-danger-methods', 'plain-language-methods', 'legacy-method-copy-migration'] }))

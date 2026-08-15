@@ -1,5 +1,6 @@
 import { t } from '../i18n'
 import type { DangerDirective, DangerOutcome, ParsedScene, StoryBlock, StoryCartridge, StoryDangerState, StorySave } from '../types'
+import { encodeChoiceRecord } from './choiceInput'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -129,6 +130,41 @@ export function dangerDirectiveChoices(directive: DangerDirective, scene: number
   return [...new Set(directive.methods.map((method) => method.trim()).filter(Boolean))]
     .slice(0, 5)
     .map((label, index) => ({ id: `danger-${scene}-${index}`, label }))
+}
+
+/** Rewrite only exact legacy danger-method labels that are still actionable in
+ * the latest saved scene. Historical actions remain untouched. */
+export function repairLegacyDangerMethodChoices<T extends {
+  scene: number
+  choices: StorySave['choices']
+  blocks: StorySave['blocks']
+  facts?: StorySave['facts']
+}>(candidate: T, cartridge: StoryCartridge): T {
+  const config = cartridge.dangerDirector
+  if (!config?.legacyMethods?.length || !candidate.choices.length) return candidate
+  const replacements = new Map<string, string>()
+  config.legacyMethods.forEach((methods) => methods.forEach((label, index) => {
+    replacements.set(label.trim(), config.methods[index])
+  }))
+  let changed = false
+  const choices = candidate.choices.map((choice) => {
+    const label = replacements.get(choice.label.trim())
+    if (!label || label === choice.label) return choice
+    changed = true
+    return { ...choice, label }
+  })
+  if (!changed) return candidate
+  const recordId = `choices-${candidate.scene}`
+  return {
+    ...candidate,
+    choices,
+    blocks: candidate.blocks.map((block) => block.id === recordId && block.kind === 'choices'
+      ? { ...block, text: encodeChoiceRecord(choices) }
+      : block),
+    ...(candidate.facts ? {
+      facts: { ...candidate.facts, 'legacy-danger-method-copy-repaired-v1': true },
+    } : {}),
+  } as T
 }
 
 function hasMeaningfulCost(before: StorySave, after: StorySave, cartridge: StoryCartridge): boolean {

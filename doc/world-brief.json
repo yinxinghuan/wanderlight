@@ -57,7 +57,7 @@
     "maxSafeTurns": 5,
     "cooldownTurns": 3,
     "physicalCombat": "none",
-    "methods": ["read the warning and ask for context", "protect a person or commitment at a personal cost", "withdraw, reroute, or set a clear boundary"],
+    "methods": ["ask what happened first", "risk carrying on with the current plan", "step back and try another way"],
     "threatPalette": [
       "the last moonline service is cancelled while the player is far from their room",
       "a private invitation is repeated publicly and creates an unwanted rumor",

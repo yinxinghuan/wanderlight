@@ -111,6 +111,8 @@ export interface StoryDangerDirector {
   escalationStats: string[]
   threatPalette: string[]
   methods: [string, string, string]
+  /** Previous player-facing copies, kept only to migrate live choices in old saves. */
+  legacyMethods?: [string, string, string][]
   physicalCombat: 'none' | 'rare' | 'occasional'
   resolution: {
     skill: string

@@ -12,7 +12,7 @@ import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, repairUns
 import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence, repairPersistedMapRouteHints } from './engine/turnConsistency'
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
-import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
+import { buildDangerDirective, normalizeDangerState, repairLegacyDangerMethodChoices } from './engine/dangerDirector'
 import { activeStatFloorRule, domainSuppressesDanger, repairDomainRepeatState, repairEndedSessionChoices, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
 import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from './engine/authoredTurns'
 import { t } from './i18n'
@@ -137,6 +137,7 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     danger: normalizeDangerState(repaired.danger), jobs: (repaired.jobs ?? []).map((job) => ({ ...job })),
     facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
   } as StorySave, cartridge))
+  normalized = repairLegacyDangerMethodChoices(normalized, cartridge)
   normalized = restoreDeterministicRecoveryChoice(normalized, cartridge)
   if (!normalized.sessionEnded && normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
   const floor = activeStatFloorRule(normalized, cartridge)
