@@ -252,6 +252,27 @@ export function repairDomainRepeatState(save: StorySave, cartridge: StoryCartrid
   return { ...save, facts }
 }
 
+/** Older builds persisted ordinary quick replies even after a domain action
+ * closed the day. A closed checkpoint owns a single Composer-provided Continue
+ * action, so stale saved replies and their article record must be removed. */
+export function repairEndedSessionChoices<T extends {
+  scene: number
+  sessionEnded?: boolean
+  choices: StorySave['choices']
+  blocks: StorySave['blocks']
+  facts?: StorySave['facts']
+}>(candidate: T): T {
+  if (!candidate.sessionEnded || candidate.choices.length === 0) return candidate
+  return {
+    ...candidate,
+    choices: [],
+    blocks: candidate.blocks.filter((block) => block.id !== `choices-${candidate.scene}`),
+    ...(candidate.facts ? {
+      facts: { ...candidate.facts, 'legacy-day-end-choices-repaired-v1': true },
+    } : {}),
+  } as T
+}
+
 export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge, resolution?: DomainActionResolution): StoryBlock[] {
   if (!resolution) return []
   save.choices = resolution.successChoices.map((label, index) => ({ id: `domain-${save.scene}-${index}`, label }))

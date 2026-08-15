@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { wanderlight, wanderlightEn } from '../src/story/cartridges/wanderlight'
-import { repairDomainRepeatState, resolveDomainAction } from '../src/story/engine/domainRules'
+import { repairDomainRepeatState, repairEndedSessionChoices, resolveDomainAction } from '../src/story/engine/domainRules'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyParsedScene, createInitialSave } from '../src/story/engine/reducer'
 import type { StorySave } from '../src/story/types'
@@ -70,6 +70,25 @@ const legacyAfterShift = {
 const migratedLegacy = repairDomainRepeatState(legacyAfterShift, wanderlight)
 assert.equal(resolveDomainAction(migratedLegacy, wanderlight, '找一份短工')?.status, 'rejected', '旧存档最新回合已完成短工时必须迁移冷却，不能更新后再扣一次')
 
+const legacyEnded = repairEndedSessionChoices({
+  ...createInitialSave(wanderlight),
+  scene: 4,
+  sessionEnded: true,
+  choices: [
+    { id: 'legacy-meal', label: '吃一顿热饭' },
+    { id: 'legacy-rest', label: '原地坐下，休息四十五分钟' },
+    { id: 'legacy-retreat', label: '放弃当前行动，去最近的公共休息处' },
+    { id: 'legacy-end-day', label: '结束今天，休息到清晨' },
+  ],
+  blocks: [
+    ...createInitialSave(wanderlight).blocks,
+    { id: 'choices-4', kind: 'choices' as const, text: 'legacy ordinary choices' },
+  ],
+})
+assert.equal(legacyEnded.choices.length, 0, '上一版已经保存的日终四选项必须在载入时清空')
+assert.equal(legacyEnded.blocks.some((block) => block.id === 'choices-4'), false, '旧日终选项的正文记录也必须移除')
+assert.equal(legacyEnded.facts['legacy-day-end-choices-repaired-v1'], true, '旧存档迁移必须留下可诊断标记')
+
 const movedAfterShift = {
   ...migratedLegacy,
   location: '杯影夜市',
@@ -99,4 +118,4 @@ assert.equal(afterRoom.stats.coin, 2, '明确订房后由领域 reducer 原子�
 assert.equal(afterRoom.facts.lodging_secured, true, '付款成功必须持久化已获得住宿')
 assert.equal(afterRoom.sessionEnded, true, '过夜住宿应进入已保存的自然停止点')
 
-console.log(JSON.stringify({ ok: true, checks: ['single-shift-per-location-day', 'visible-result-before-deltas', 'forced-repeat-zero-effects', 'day-end-zero-ordinary-choices', 'next-day-cooldown-cleared', 'new-location-reopens', 'legacy-repeat-migration', 'low-energy-preflight', 'zh-en-repeat-policy', 'feasible-recovery-visible', 'free-input-specific-reason', 'lodging-payment-preflight', 'lodging-atomic-state'] }))
+console.log(JSON.stringify({ ok: true, checks: ['single-shift-per-location-day', 'visible-result-before-deltas', 'forced-repeat-zero-effects', 'day-end-zero-ordinary-choices', 'legacy-day-end-choice-migration', 'next-day-cooldown-cleared', 'new-location-reopens', 'legacy-repeat-migration', 'low-energy-preflight', 'zh-en-repeat-policy', 'feasible-recovery-visible', 'free-input-specific-reason', 'lodging-payment-preflight', 'lodging-atomic-state'] }))
