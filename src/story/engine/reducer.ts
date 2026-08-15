@@ -1,4 +1,4 @@
-import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVisualIdentity, type DangerDirective, type DomainActionResolution, type ImageBlockStatus, type ParsedCommand, type ParsedScene, type SceneImageSubject, type StoryBlock, type StoryCartridge, type StoryCharacter, type StorySave } from '../types'
+import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVisualIdentity, type DangerDirective, type DomainActionResolution, type ImageBlockStatus, type MapNode, type ParsedCommand, type ParsedScene, type SceneImageSubject, type StoryBlock, type StoryCartridge, type StoryCharacter, type StorySave } from '../types'
 import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
 import { createInitialDangerState, dangerDirectiveChoices, normalizeDangerState, settleDangerTurn } from './dangerDirector'
@@ -6,6 +6,7 @@ import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices }
 import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
 import { resolveDeterministicChoiceTurn } from './authoredTurns'
+import { inferActionDestination } from './turnConsistency'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -442,6 +443,38 @@ export function applyConsistencyRecovery(save: StorySave, cartridge: StoryCartri
   }
 }
 
+/** A displayed route is an executable UI contract. If generation and its
+ * repair both omit or contradict the destination, complete only the locally
+ * certain route transition and continue from grounded state-owned choices. */
+export function applyDisplayedRouteFallback(
+  save: StorySave,
+  cartridge: StoryCartridge,
+  action: string,
+  destination: MapNode,
+): StorySave {
+  const choices = createRecoveryChoices({
+    ...save,
+    scene: save.scene + 1,
+    location: destination.label,
+  }, cartridge)
+  const text = cartridge.locale === 'zh'
+    ? `你沿着已经确认的路线离开${save.location}，抵达${destination.label}。“${action}”这一步已经开始，眼前的环境与行动重新衔接。`
+    : `You follow the confirmed route out of ${save.location} and reach ${destination.label}. “${action}” is now underway, with the action and surroundings aligned again.`
+  const parsed: ParsedScene = {
+    raw: text,
+    blocks: [{ id: `route-fallback-${save.scene + 1}`, kind: 'narration', text }],
+    commands: [
+      {
+        type: 'map_update', location: destination.label, connectedTo: destination.connectedTo,
+        detail: destination.detail, lore: destination.lore, facts: destination.facts,
+      },
+      { type: 'scene_location', location: destination.label },
+      { type: 'choices', choices: choices.map((choice) => choice.label) },
+    ],
+  }
+  return applyParsedScene(save, parsed, cartridge, action)
+}
+
 export function repairLegacyConsistencyRecovery<T extends {
   scene: number
   location: string
@@ -530,8 +563,11 @@ export function repairLegacyConsistencyRecovery<T extends {
 export function restoreDeterministicRecoveryChoice(save: StorySave, cartridge: StoryCartridge): StorySave {
   if (save.sessionEnded || !save.blocks.some((block) => block.id === `consistency-recovery-${save.scene}`)) return save
   const action = rootConsistencyAction(save, cartridge)
-  if (!action || !resolveDeterministicChoiceTurn(save, cartridge, action, { requireVisibleChoice: false })) return save
-  const retry = { id: `scripted-recovery-${save.scene}`, label: action }
+  if (!action) return save
+  const scripted = resolveDeterministicChoiceTurn(save, cartridge, action, { requireVisibleChoice: false })
+  const route = inferActionDestination(save, cartridge, action)
+  if (!scripted && !route) return save
+  const retry = { id: `${scripted ? 'scripted' : 'route'}-recovery-${save.scene}`, label: action }
   const choices = [retry, ...save.choices.filter((choice) => choice.label !== action)].slice(0, 5)
   if (save.choices.length === choices.length && save.choices.every((choice, index) => choice.id === choices[index]?.id && choice.label === choices[index]?.label)) return save
   const recordId = `choices-${save.scene}`

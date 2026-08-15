@@ -68,7 +68,7 @@ export const SCENE_IMAGE_PROMPT_VERSION = 6
 export type SceneImageSubject = 'player' | 'environment' | 'others'
 export interface StoryBlock { id: string; kind: 'narration' | 'dialogue' | 'check' | 'change' | 'event' | 'summary' | 'image' | 'choices'; text: string; speaker?: string; tone?: string; data?: Record<string, string | number> }
 export interface EntityMetric { id?: string; label: string; value: string }
-export interface MapNode { id: string; label: string; connectedTo?: string; current?: boolean; visited?: boolean; detail?: string; lore?: string; facts?: string[] }
+export interface MapNode { id: string; label: string; connectedTo?: string; current?: boolean; visited?: boolean; detail?: string; lore?: string; facts?: string[]; routeHints?: string[] }
 export interface InventoryItem {
   id: string
   label: string

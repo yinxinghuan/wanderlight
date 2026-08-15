@@ -195,36 +195,43 @@ function worldMap(locale: Locale): StoryCartridge['initialMap'] {
     {
       id: 'lantern-quay', label: s('灯湾码头', 'Lantern Quay'), current: true, visited: true,
       detail: s('渡口、月线总站和临时招工点都在这片湿石广场上。', 'The ferry, Moonline terminal, and day-labor posts share this wet-stone square.'),
+      routeHints: zh ? ['灯湾码头', '渡口', '湿石广场', '招工点'] : ['Lantern Quay', 'ferry', 'wet-stone square', 'day-labor posts'],
       facts: [s('末班月线 19:20 离站', 'Last Moonline leaves at 19:20'), s('可做路线整理和码头搬运', 'Route sorting and dock hauling pay on completion'), s('渡口食堂和楼上旅店整夜营业', 'The ferry canteen and upstairs inn stay open all night')],
     },
     {
       id: 'moonline-carriage', label: s('月线车厢', 'Moonline Carriage'), connectedTo: s('灯湾码头', 'Lantern Quay'),
       detail: s('开往海岸各地的夜班车厢，适合在途中休息和保存进度。', 'A night carriage serving the coast, with time to rest and save along the way.'),
+      routeHints: zh ? ['月线车厢', '车厢', '列车', '车窗'] : ['Moonline Carriage', 'carriage', 'train', 'train window'],
       facts: [s('靠窗休息可恢复精力但会推进时间', 'Window-seat rest restores energy while time advances'), s('乘务员会说明下一站的工作与住宿', 'Stewards can explain work and lodging at the next stop')],
     },
     {
       id: 'cupshadow-market', label: s('杯影夜市', 'Cupshadow Market'), connectedTo: s('灯湾码头', 'Lantern Quay'),
       detail: s('雨棚下有演出、食摊、搬运和布台短工。', 'Awnings shelter performances, food stalls, hauling, and stage work.'),
+      routeHints: zh ? ['杯影夜市', '夜市', '雨棚', '舞台', '食摊'] : ['Cupshadow Market', 'night market', 'awnings', 'stage', 'food stalls'],
       facts: [s('搬运和布台按场结算', 'Hauling and stage setup pay after each show'), s('共餐长桌是认识摊主和乐师的地方', 'A shared supper table brings vendors and musicians together'), s('闭市后可回灯湾旅店休息', 'The Lantern Quay inn remains available after closing')],
     },
     {
       id: 'silverleaf-vineyard', label: s('银叶葡萄丘', 'Silverleaf Vineyard'), connectedTo: s('月线车厢', 'Moonline Carriage'),
       detail: s('葡萄藤随月光转向，田舍常雇季节短工。', 'Moon-turning vines and field houses that hire seasonal workers.'),
+      routeHints: zh ? ['银叶葡萄丘', '葡萄丘', '葡萄园', '葡萄行', '葡萄藤', '藤架', '田野', '田舍'] : ['Silverleaf Vineyard', 'vineyard', 'grape rows', 'grapevines', 'trellis', 'fields', 'field house'],
       facts: [s('藤架修补和田野记录需要短工', 'Trellis repair and field surveys need temporary help'), s('晚餐长桌与试饮不要求发展亲密关系', 'Supper and tasting invitations carry no romantic obligation'), s('田舍有十枚钱币的客房', 'The field house rents rooms for ten coin')],
     },
     {
       id: 'mistpine-forest', label: s('雾杉林', 'Mistpine Forest'), connectedTo: s('月线车厢', 'Moonline Carriage'),
       detail: s('有安全栈道、菌类调查和林灯维护工作。', 'Safe boardwalks, mushroom surveys, and forest-lamp maintenance.'),
+      routeHints: zh ? ['雾杉林', '林地', '栈道', '菌类', '林灯', '护林人'] : ['Mistpine Forest', 'forest', 'boardwalk', 'mushrooms', 'forest lamps', 'rangers'],
       facts: [s('菌类调查和林灯维护按路线结算', 'Mushroom surveys and lamp maintenance pay by route'), s('护林人共用的茶棚适合交换消息', 'A ranger tea shelter is used for news and company'), s('夜间只能在灯屋或月线站休息', 'Night rest is limited to lamp houses or the Moonline stop')],
     },
     {
       id: 'tidal-islands', label: s('潮汐群岛', 'Tidal Islands'), connectedTo: s('月线车厢', 'Moonline Carriage'),
       detail: s('退潮时木桥连起渔业、修网和乐器工坊。', 'At low tide, bridges link fishing, net-mending, and instrument workshops.'),
+      routeHints: zh ? ['潮汐群岛', '群岛', '浅滩', '木栈桥', '渔网', '修网'] : ['Tidal Islands', 'islands', 'tidal flats', 'wooden bridge', 'fishing nets', 'net mending'],
       facts: [s('修网和码头搬运在涨潮前结算', 'Net mending and landing work pay before high tide'), s('清晨演出和公共灶台是主要社交场所', 'Dawn performances and the public stove are social gathering places'), s('涨潮后可住桥头客舍或搭月线离开', 'After high tide, use the bridgehead guesthouse or leave by Moonline')],
     },
     {
       id: 'far-lantern-institute', label: s('远灯研修院', 'Far Lantern Institute'), connectedTo: s('月线车厢', 'Moonline Carriage'),
       detail: s('只招收成年人的职业与实用魔法研修院。', 'An adult institute for trades and practical magic.'),
+      routeHints: zh ? ['远灯研修院', '研修院', '工坊', '陶轮', '修理台', '观测仪'] : ['Far Lantern Institute', 'institute', 'workshop', 'pottery wheel', 'repair bench', 'observatory instruments'],
       facts: [s('夜间工坊会发布修理与记录工作', 'Night workshops post repair and recording jobs'), s('开放讲座和公共工作台允许访客参加', 'Open lectures and shared benches welcome adult visitors'), s('空余客房每晚十枚钱币', 'Available guest rooms cost ten coin per night')],
     },
   ]

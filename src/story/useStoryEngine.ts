@@ -6,10 +6,10 @@ import { aigramAdapter } from './adapters/aigram'
 import { mockAdapter } from './adapters/mock'
 import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
-import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment } from './engine/paymentConsistency'
-import { canCommitDisplayedChoiceWithoutGeneratedReplies, repairKnownForestSceneDivergence } from './engine/turnConsistency'
+import { canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence } from './engine/turnConsistency'
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
@@ -305,6 +305,9 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
     try {
       const adapter = mode === 'remote' ? remoteAdapter : mode === 'aigram' ? aigramAdapter : mockAdapter
       const base = localizeKnownState(saveRef.current, cartridge, activeCartridge)
+      const displayedRouteDestination = base.choices.some((choice) => choice.label.trim() === normalizedAction)
+        ? inferActionDestination(base, activeCartridge, normalizedAction)
+        : undefined
       const recoverySelection = resolveConsistencyRecoverySelection(base, activeCartridge, normalizedAction)
       if (recoverySelection) {
         commit((current) => applyConsistencyRecoverySelection(
@@ -368,6 +371,14 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
               commit((current) => applyParsedScene(
                 localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
                 result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId,
+              ))
+              setPendingAction('')
+              setProgress(null)
+              return
+            }
+            if (displayedRouteDestination) {
+              commit((current) => applyDisplayedRouteFallback(
+                localizeKnownState(current, cartridge, activeCartridge), activeCartridge, normalizedAction, displayedRouteDestination,
               ))
               setPendingAction('')
               setProgress(null)

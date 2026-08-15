@@ -1,7 +1,7 @@
 import { encodeChoiceRecord } from './choiceInput'
 import { filterGroundedChoices } from './continuity'
 import { resolveDomainAction } from './domainRules'
-import type { ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
+import type { MapNode, ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
 
 function clean(value: string): string {
   return value.toLocaleLowerCase().replace(/[\s，。！？、,.!?;；:："“”'‘’()（）\-—_/]+/g, '')
@@ -12,10 +12,83 @@ function effectiveLocation(save: StorySave, parsed: ParsedScene): string {
   return update?.type === 'map_update' ? update.location : save.location
 }
 
-function sceneBelongsToMapLocation(sceneLocation: string, mapLocation: string): boolean {
+function sceneBelongsToMapLocation(sceneLocation: string, mapLocation: string, save: StorySave, cartridge: StoryCartridge): boolean {
   const scene = clean(sceneLocation)
   const map = clean(mapLocation)
-  return scene === map || scene.includes(map)
+  if (scene === map || scene.includes(map)) return true
+  const node = mapNodes(save, cartridge).find((candidate) => clean(candidate.label) === map)
+  return Boolean(node?.routeHints?.some((hint) => {
+    const normalized = clean(hint)
+    return normalized.length >= 2 && scene.includes(normalized)
+  }))
+}
+
+function mapNodes(save: Pick<StorySave, 'map'>, cartridge: Pick<StoryCartridge, 'initialMap'>): MapNode[] {
+  const definitions = new Map(cartridge.initialMap.map((node) => [node.id, node]))
+  const merged: MapNode[] = save.map.map((node) => {
+    const definition = definitions.get(node.id)
+    return { ...definition, ...node, routeHints: node.routeHints ?? definition?.routeHints }
+  })
+  cartridge.initialMap.forEach((node) => {
+    if (!merged.some((candidate) => candidate.id === node.id || clean(candidate.label) === clean(node.label))) merged.push(node)
+  })
+  return merged
+}
+
+function routeMovementCue(value: string, locale: StoryCartridge['locale']): boolean {
+  return locale === 'zh'
+    ? /(?:前往|去往|赶往|返回|回到|进入|走进|走到|抵达|到达|下车|离开|往[^。！？\n]{0,28}(?:走|去|检查|干活|工作|修补)|沿[^。！？\n]{0,28}(?:走|前进)|跟随|带着|陪同)/.test(value)
+    : /\b(?:travel|go|head|return|enter|walk|reach|arrive|get off|leave|follow|accompany)\b/i.test(value)
+}
+
+function routeMatchScore(value: string, node: MapNode): number {
+  const normalized = clean(value)
+  const label = clean(node.label)
+  let score = normalized.includes(label) ? 100 + label.length : 0
+  const matches = new Set((node.routeHints ?? []).map(clean).filter((hint) => hint.length >= 2 && normalized.includes(hint)))
+  matches.forEach((hint) => { score += 10 + Math.min(hint.length, 12) })
+  return score
+}
+
+/** Resolve a system/free-input route to a stable map id before generation.
+ * The route must contain both an actual movement/commitment cue and a unique
+ * destination fingerprint; merely discussing a remote place does not move. */
+export function inferActionDestination(save: StorySave, cartridge: StoryCartridge, action: string): MapNode | undefined {
+  if (!routeMovementCue(action, cartridge.locale)) return undefined
+  const candidates = mapNodes(save, cartridge)
+    .filter((node) => clean(node.label) !== clean(save.location))
+    .map((node) => ({ node, score: routeMatchScore(action, node) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score)
+  if (!candidates.length || candidates[0].score === candidates[1]?.score) return undefined
+  return candidates[0].node
+}
+
+function inferVisibleDestination(save: StorySave, cartridge: StoryCartridge, parsed: ParsedScene): MapNode | undefined {
+  const prose = visibleProse(parsed)
+  const embodied = cartridge.locale === 'zh'
+    ? /(?:你|你们)[^。！？\n]{0,24}(?:已经在|正在|开始|走进|进入|抵达|到达|下车|穿过)/.test(prose)
+    : /\b(?:you|your group)\b.{0,60}\b(?:are now|begin|enter|reach|arrive|get off|cross)\b/i.test(prose)
+  if (!embodied) return undefined
+  const candidates = mapNodes(save, cartridge)
+    .filter((node) => clean(node.label) !== clean(save.location))
+    .map((node) => ({ node, score: routeMatchScore(prose, node) }))
+    .filter(({ node, score }) => score >= 100 || (score > 0 && (node.routeHints ?? []).filter((hint) => clean(hint).length >= 2 && clean(prose).includes(clean(hint))).length >= 2))
+    .sort((a, b) => b.score - a.score)
+  if (!candidates.length || candidates[0].score === candidates[1]?.score) return undefined
+  return candidates[0].node
+}
+
+function explicitlyRemainsAtCurrentLocation(save: StorySave, cartridge: StoryCartridge, parsed: ParsedScene): boolean {
+  const current = mapNodes(save, cartridge).find((node) => clean(node.label) === clean(save.location))
+  const labels = [current?.label ?? save.location, ...(current?.routeHints ?? [])].filter((value) => clean(value).length >= 2)
+  return visibleProse(parsed).split(/(?<=[。！？.!?])|\n+/).some((sentence) => {
+    const mentionsCurrent = labels.some((label) => clean(sentence).includes(clean(label)))
+    const remains = cartridge.locale === 'zh'
+      ? /(?:仍在|还在|依然在|仍留在|没有离开|暂时留在)/.test(sentence)
+      : /\b(?:still|remain|stays?|have not left|has not left)\b/i.test(sentence)
+    return mentionsCurrent && remains
+  })
 }
 
 function visibleProse(parsed: ParsedScene): string {
@@ -66,7 +139,7 @@ export function canonicalizeTurnMetadata(
     })
     originalSceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
   }
-  const hasMapUpdate = commands.some((command) => command.type === 'map_update')
+  let hasMapUpdate = commands.some((command) => command.type === 'map_update')
   if (!hasMapUpdate && originalSceneLocations.length === 1 && clean(originalSceneLocations[0].location) !== clean(save.location)) {
     const destination = save.map.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
       ?? cartridge.initialMap.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
@@ -78,6 +151,21 @@ export function canonicalizeTurnMetadata(
         type: 'map_update', location: destination.label, connectedTo: destination.connectedTo,
         detail: destination.detail, lore: destination.lore, facts: destination.facts,
       }]
+      hasMapUpdate = true
+    }
+  }
+
+  if (!hasMapUpdate) {
+    const destination = (action ? inferActionDestination(save, cartridge, action) : undefined)
+      ?? inferVisibleDestination(save, cartridge, { ...parsed, commands })
+    if (destination && !explicitlyRemainsAtCurrentLocation(save, cartridge, { ...parsed, commands })) {
+      commands = commands.filter((command) => command.type !== 'scene_location'
+        || sceneBelongsToMapLocation(command.location, destination.label, save, cartridge))
+      commands = [...commands, {
+        type: 'map_update', location: destination.label, connectedTo: destination.connectedTo,
+        detail: destination.detail, lore: destination.lore, facts: destination.facts,
+      }]
+      hasMapUpdate = true
     }
   }
 
@@ -214,6 +302,7 @@ export function validateTurnConsistency(
   parsed: ParsedScene,
   cartridge: StoryCartridge,
   imagePrompt?: string,
+  action?: string,
 ): string[] {
   const violations = new Set<string>()
   const location = effectiveLocation(save, parsed)
@@ -224,7 +313,7 @@ export function validateTurnConsistency(
   const prose = visibleProse(parsed)
 
   if (sceneLocations.length !== 1) violations.add('turn.requires_one_scene_location')
-  else if (!sceneBelongsToMapLocation(sceneLocations[0].location, location)) violations.add('turn.scene_location_must_match_state')
+  else if (!sceneBelongsToMapLocation(sceneLocations[0].location, location, save, cartridge)) violations.add('turn.scene_location_must_match_state')
   if (mapUpdates.length > 1) violations.add('turn.allows_one_map_update')
 
   if (imagePrompt) {
@@ -237,10 +326,14 @@ export function validateTurnConsistency(
 
   if (newTaskCue(cartridge.locale).test(prose) && !parsed.commands.some((command) => command.type === 'state')) violations.add('turn.new_task_requires_objective_state')
 
-  const arrivedAtOtherKnownPlace = save.map.some((node) => clean(node.label) !== clean(save.location)
+  const actionDestination = action ? inferActionDestination(save, cartridge, action) : undefined
+  if (actionDestination && clean(location) !== clean(actionDestination.label)) violations.add('turn.displayed_route_requires_destination')
+
+  const arrivedAtOtherKnownPlace = mapNodes(save, cartridge).some((node) => clean(node.label) !== clean(save.location)
     && prose.split(/(?<=[。！？.!?])|\n+/).some((sentence) => clean(sentence).includes(clean(node.label))
       && /(?:抵达|到达|来到|走进|进入|已经在|身处|下车|arriv|reach|enter|step into|now in|get off)/i.test(sentence)))
   if (arrivedAtOtherKnownPlace && !mapUpdates.length) violations.add('turn.visible_arrival_requires_map_update')
+  if (inferVisibleDestination(save, cartridge, parsed) && !mapUpdates.length) violations.add('turn.visible_arrival_requires_map_update')
 
   return [...violations]
 }

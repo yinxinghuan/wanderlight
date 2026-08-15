@@ -1,9 +1,9 @@
 import { listCartridges } from '../src/story/cartridges/index'
 import { decodeChoiceRecord, encodeChoiceRecord } from '../src/story/engine/choiceInput'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
-import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection } from '../src/story/engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
-import { canCommitDisplayedChoiceWithoutGeneratedReplies, canCommitGeneratedTurnWithoutReplies, canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
+import { canCommitDisplayedChoiceWithoutGeneratedReplies, canCommitGeneratedTurnWithoutReplies, canonicalizeTurnMetadata, inferActionDestination, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
 import { canonicalizePaymentMetadata, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
 import { resolveDeterministicOpeningTurn } from '../src/story/engine/authoredTurns'
 import { t } from '../src/story/i18n'
@@ -234,6 +234,56 @@ const omittedMapUpdate = parseStoryProtocol(`你穿过雨棚，走进杯影夜�
 const canonicalArrival = canonicalizeTurnMetadata(initial, omittedMapUpdate, cartridge)
 ok(canonicalArrival.parsed.commands.some((command) => command.type === 'map_update' && command.location === '杯影夜市'), 'visible arrival at a known place synthesizes the omitted map update')
 equal(validateTurnConsistency(initial, canonicalArrival.parsed, cartridge).length, 0, 'known visible arrival commits without blaming the player for missing model metadata')
+
+const carriageNode = cartridge.initialMap.find((node) => node.id === 'moonline-carriage')!
+const carriageSave = {
+  ...initial,
+  location: carriageNode.label,
+  sceneLocation: carriageNode.label,
+  map: initial.map.map((node) => ({ ...node, current: node.id === carriageNode.id })),
+}
+const vineyardAction = '接受媛夕的分工安排，和临时工一起往田野深处检查藤架'
+equal(inferActionDestination(carriageSave, cartridge, vineyardAction)?.id, 'silverleaf-vineyard', 'field and trellis semantics resolve the displayed route to Silverleaf Vineyard')
+const semanticFieldDraft = parseStoryProtocol(`你和临时工已经在田野深处开始干活。泥土粘在靴子上，你们逐排检查葡萄藤架。
+[scene_location: location="月线车厢"]
+[choices: "观察银叶葡萄丘的新变化"]`, 'zh')
+const semanticField = canonicalizeTurnMetadata(carriageSave, semanticFieldDraft, cartridge, undefined, vineyardAction)
+ok(semanticField.parsed.commands.some((command) => command.type === 'map_update' && command.location === '银叶葡萄丘'), 'a displayed semantic route synthesizes its stable destination update')
+ok(semanticField.parsed.commands.some((command) => command.type === 'scene_location' && command.location !== '月线车厢'), 'stale carriage scene metadata is replaced when the route reaches the field')
+equal(validateTurnConsistency(carriageSave, semanticField.parsed, cartridge, undefined, vineyardAction).length, 0, 'field prose, map state and system route commit as one aligned turn')
+const semanticFieldCommitted = applyParsedScene(carriageSave, semanticField.parsed, cartridge, vineyardAction)
+equal(semanticFieldCommitted.location, '银叶葡萄丘', 'the HUD location follows the field action')
+
+const contradictoryField = canonicalizeTurnMetadata(carriageSave, parseStoryProtocol(`你开始行动，但没有顺利衔接。你仍在月线车厢。
+[scene_location: location="月线车厢"]
+[choices: "查看月线车厢现在能做的事"]`, 'zh'), cartridge, undefined, vineyardAction)
+ok(!contradictoryField.parsed.commands.some((command) => command.type === 'map_update'), 'an explicit claim that the player remains in the carriage is not silently rewritten as arrival')
+ok(validateTurnConsistency(carriageSave, contradictoryField.parsed, cartridge, undefined, vineyardAction).includes('turn.displayed_route_requires_destination'), 'a displayed route that fails to reach its promised destination must repair')
+const vineyardDestination = inferActionDestination(carriageSave, cartridge, vineyardAction)!
+const routeFallback = applyDisplayedRouteFallback(carriageSave, cartridge, vineyardAction, vineyardDestination)
+equal(routeFallback.location, '银叶葡萄丘', 'after two bad drafts the local route fallback still completes the displayed destination')
+ok(routeFallback.choices.length >= 1, 'the local route fallback remains playable')
+ok(routeFallback.blocks.some((block) => block.data?.arrival === '银叶葡萄丘'), 'the local fallback records the same visible arrival as an ordinary map transition')
+
+const routeRecovery = restoreDeterministicRecoveryChoice(applyConsistencyRecovery(carriageSave, cartridge, vineyardAction), cartridge)
+equal(routeRecovery.choices[0]?.label, vineyardAction, 'an existing quarantined but semantically valid route is restored after upgrading')
+ok(routeRecovery.choices[0]?.id.startsWith('route-recovery-'), 'the restored route bypasses the synthetic recovery-menu interceptor')
+
+const discussionOnly = canonicalizeTurnMetadata(carriageSave, parseStoryProtocol(`你在月线车厢里听乘务员介绍葡萄藤和田野工作，但还没有下车。
+[scene_location: location="月线车厢"]
+[choices: "继续询问田野工作的要求"]`, 'zh'), cartridge)
+ok(!discussionOnly.parsed.commands.some((command) => command.type === 'map_update'), 'merely discussing a remote field does not teleport the player')
+
+const enCartridge = listCartridges('en')[0]
+const enInitial = createInitialSave(enCartridge)
+const enCarriage = enCartridge.initialMap.find((node) => node.id === 'moonline-carriage')!
+const enCarriageSave = {
+  ...enInitial,
+  location: enCarriage.label,
+  sceneLocation: enCarriage.label,
+  map: enInitial.map.map((node) => ({ ...node, current: node.id === enCarriage.id })),
+}
+equal(inferActionDestination(enCarriageSave, enCartridge, 'Accept Mira’s work plan and head into the fields to inspect the trellis')?.id, 'silverleaf-vineyard', 'English semantic routes resolve to the same stable map id')
 
 const openingDetour = canonicalizeTurnMetadata(initial, parseStoryProtocol(`你快步走进码头边上的旅店大堂，柜台后的招待告诉你：“单人间十枚钱币，含简单早餐。”你只了解情况，没有付款。你仍能回到月台、夜市或那位追种荚的短发女人身边。
 [scene_location: location="灯湾码头"]

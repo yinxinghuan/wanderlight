@@ -38,7 +38,7 @@ export function prepareTurnCandidate(options: {
   const paymentViolations = validatePaymentConsistency(options.save, canonical.parsed, options.cartridge, options.action)
   const turnViolations = options.skipTurnValidation
     ? []
-    : validateTurnConsistency(options.save, canonical.parsed, options.cartridge, canonical.imagePrompt)
+    : validateTurnConsistency(options.save, canonical.parsed, options.cartridge, canonical.imagePrompt, options.action)
   const violations = [...paymentViolations, ...turnViolations]
   return {
     parsed: canonical.parsed,
