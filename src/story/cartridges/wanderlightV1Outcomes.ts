@@ -25,6 +25,7 @@ At dawn she must record the row of vines that turns most slowly. The survey need
 
 [party_change: character="媛夕" character_id="mira-voss" change="add"]
 [reputation: npc="媛夕" action="chose-to-travel"]
+[state: value="和媛夕调查东边转向最慢的葡萄藤"]
 [clock: value="第 2 天 · 06:10"]
 [session_end: reason="你在银叶田舍休息到清晨。调查路线、报酬和与媛夕的约定都已保存。"]`
     : `You confirm the survey length and pay before agreeing to meet at the east trellis at dawn. Mira draws a simple route on a blank page of the passbook, then returns both cups to the basket.
@@ -33,6 +34,7 @@ This is not a promise that demands you stay. It is one shared road tomorrow, wit
 
 [party_change: character="Mira Voss" character_id="mira-voss" change="add"]
 [reputation: npc="Mira Voss" action="chose-to-travel"]
+[state: value="Survey the slow-turning east vines with Mira"]
 [clock: value="Day 2 · 06:10"]
 [session_end: reason="You rest at the Silverleaf field house until dawn. The survey route, pay, and your agreement with Mira are saved."]`
 
@@ -59,12 +61,14 @@ Rowan will inspect an old branch toward Mistpine Forest in the morning. He is wi
 
 [party_change: character="罗温" character_id="rowan-hale" change="add"]
 [reputation: npc="罗温" action="chose-to-travel"]
+[state: value="和罗温检查通往雾杉林的旧支线"]
 [clock: value="第 2 天 · 06:35"]
 [session_end: reason="你在远灯研修院的客房休息。雾杉支线的会合地点和与罗温的同行边界都已保存。"]`
     : `You agree to complete only the morning branch inspection, then decide whether to keep traveling together. Rowan marks the meeting platform at the edge of the map and leaves the spare measuring cord with you.
 
 [party_change: character="Rowan Hale" character_id="rowan-hale" change="add"]
 [reputation: npc="Rowan Hale" action="chose-to-travel"]
+[state: value="Inspect the old Mistpine branch with Rowan"]
 [clock: value="Day 2 · 06:35"]
 [session_end: reason="You rest in Far Lantern Institute's guest room. The Mistpine meeting point and the limits of your agreement with Rowan are saved."]`
 
@@ -87,12 +91,14 @@ After the concert she will travel to another night market. She offers you the st
 
 [party_change: character="塞莱斯特" character_id="celeste-ardin" change="add"]
 [reputation: npc="塞莱斯特" action="chose-to-travel"]
+[state: value="和塞莱斯特完成下一站的布台工作"]
 [clock: value="第 2 天 · 07:05"]
 [session_end: reason="清晨演出结束。下一站的工作条件和与塞莱斯特的同行约定都已保存。"]`
     : `You accept the staging job at the next stop, not an open-ended obligation to follow. Celeste writes the pay on her settlement board and tears off one unlettered corner as your equipment token.
 
 [party_change: character="Celeste Ardin" character_id="celeste-ardin" change="add"]
 [reputation: npc="Celeste Ardin" action="chose-to-travel"]
+[state: value="Complete the next staging job with Celeste"]
 [clock: value="Day 2 · 07:05"]
 [session_end: reason="The dawn concert is over. The next job's terms and your travel agreement with Celeste are saved."]`
 

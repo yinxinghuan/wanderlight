@@ -21,6 +21,7 @@ src/
   story/cartridges/wanderlightV1Content.ts   # 罗温/塞莱斯特的首次登场、工作、中转与重逢
   story/cartridges/wanderlightV1Outcomes.ts  # 三名核心角色的边界判断、同行与自然停止点
   story/engine/                      # 协议、reducer、领域规则、危险、连续性与图片导演
+    turnPipeline.ts                  # 支付/地点/图片/选项共享的生成回合提交边界
     paymentConsistency.ts            # 工作合同、付款正文/命令一致性门禁与已知旧档修复
     turnConsistency.ts               # 场景、目标、选项、配图原子一致性门禁与已知场景旧档修复
   story/engine/choiceInput.ts        # 正文选择记录编解码与 1/01/2/02 数字输入映射
@@ -44,19 +45,19 @@ public-tests/
 
 ### 状态、协议与回合
 
-`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作、调用适配器、解析结构化命令，并把结果一次性交给 `engine/reducer.ts`。人物、地点、关系、物品、数值、工作合同、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`protocol.ts` 同时兼容标准 `[command: ...]` 与模型偶发的 `[command key="..."]` 缺冒号属性格式，机器协议不会进入可见正文；存档规范化也会移除旧版本已经泄漏的完整协议块。`engine/domainRules.ts` 权威结算短工、餐食、住宿、车厢休息和六条普通车票路线，并用 `clock-add` 保持跨日时间；`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
+`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作和调用适配器；生成结果统一先进入 `engine/turnPipeline.ts`，按同一份提交前存档依次完成支付规范化、地点/图片/选项规范化、机械校验与提交判定，只有通过后才一次性交给 `engine/reducer.ts`。人物、地图节点、具体场景、关系、物品、数值、工作合同、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`protocol.ts` 同时兼容标准 `[command: ...]` 与模型偶发的 `[command key="..."]` 缺冒号属性格式，机器协议不会进入可见正文；存档规范化也会移除旧版本已经泄漏的完整协议块。`engine/domainRules.ts` 权威结算短工、餐食、住宿、车厢休息、泛化消费澄清和六条普通车票路线，并用 `clock-add` 保持跨日时间；`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
 
-动态有偿工作使用 `[job]` 协议：`offer` 固化稳定工作 ID、雇主、工作内容和明确工资，`settle` 只能结算未完成合同，并由 reducer 直接按记录工资增加钱币和 `jobs_completed`；同回合额外的 coin widget 会被拒绝且 reducer 也做去重防御。`paymentConsistency.ts` 在任何生成正文写入存档前机械核对钱币、铜板、铜币、硬币等报价、付款、消费和合同金额，并用当前玩家行动做消费授权门禁：询价、寻找和考虑不是付款同意；未经授权的消费正文或隐藏扣款均拒绝，“你用这枚硬币支付”会识别为一枚支出，正向 coin widget 会被判为方向冲突。明确订房由 `overnight-room` 领域规则原子完成余额门禁、扣 `10` 枚、写入 `lodging_secured` 与结束当晚，模型不参与结算。首次一致性失败会要求当前适配器完整重写同一回合，第二次仍失败则不提交。已知的“种荚冷藏后只写几枚铜板”与“夜市酱料整理后只写几枚铜币”旧档只在精确命中各自坏剧情且缺少迁移事实时补原定 `8` 枚一次；本轮截图中未经授权的旅店付款旧档会撤销错误 `+1`、删除变化条并把正文恢复为“仅询价、未订房”，各迁移均有独立事实保证幂等。
+动态有偿工作使用 `[job]` 协议：`offer` 固化稳定工作 ID、雇主、工作内容和明确工资，`settle` 只能结算未完成合同，并由 reducer 直接按记录工资增加钱币和 `jobs_completed`；同回合额外的 coin widget 会被拒绝且 reducer 也做去重防御。罗温和塞莱斯特的开局即时短工同样使用稳定 `offer → settle`，不再靠正文旁的裸加币命令。`paymentConsistency.ts` 在任何生成正文写入存档前机械核对钱币、铜板、铜币、硬币等报价、付款、消费和合同金额，并用当前玩家行动做消费授权门禁：询价、寻找和考虑不是付款同意；“把钱全部花完”没有购买对象，也不是交易授权，Cartridge 的精确领域规则会解释余额未变并要求选择具体商品或服务。未经授权的消费正文、正文声称花光但没有合法事务、隐藏扣款均拒绝；“你用这枚硬币支付”会识别为一枚支出，正向 coin widget 会被判为方向冲突。明确订房由 `overnight-room` 领域规则原子完成余额门禁、扣 `10` 枚、写入 `lodging_secured` 与结束当晚，模型不参与结算。钱币达到 `10` 时目标自动从挣钱推进为住宿/工作/搭车决策，未订房又降到 `9` 以下时退回挣钱。首次一致性失败会要求当前适配器完整重写同一回合，第二次仍失败则不提交。
 
-每个非 demo 生成回合还必须输出唯一 `[scene_location]`；正文抵达新地点必须同回合输出 `[map_update]`，明确接受或被交付一项新任务时必须输出 `[state]`，场景图必须用 `[image_location]` 声明同一地点。`turnConsistency.ts` 联合检查地点、任务、最终选项和图片提示；缺失的纯协议地点标签从权威存档补齐。没有 `map_update` 时，完整包含当前权威地图名的细分地点（如“银叶葡萄丘田舍”）归一到当前地图节点，不能被误判成传送；若可见正文与唯一 `scene_location` 明确证明抵达另一个已知地图节点，canonicalizer 会补齐遗漏的 `map_update`，未知地点仍拒绝。模型缺少地点绑定的图片提议会被丢弃并交由本地图片导演重建；可信作者开场图则可在本地绑定当前地点。
+每个非 demo 生成回合还必须输出唯一 `[scene_location]`；正文跨地图节点抵达必须同回合输出 `[map_update]`，明确接受或被交付一项新任务时必须输出 `[state]`，场景图必须用 `[image_location]` 声明与 `scene_location` 完全相同的具体场景。`StorySave.location` 保存权威地图节点，`sceneLocation` 保存旅店、工坊、田舍等当前具体场景；旧存档缺少后者时回退到地图节点。`turnConsistency.ts` 联合检查地图、具体场景、任务、最终选项和图片提示；缺失的纯协议场景标签从权威存档补齐。同一地图节点内的细分地点保留原名但不触发传送；若可见正文与唯一 `scene_location` 明确证明抵达另一个已知地图节点，canonicalizer 会补齐遗漏的 `map_update`，未知地点仍拒绝。模型缺少地点绑定或只把图片绑到父级地图的提议会被丢弃并交由本地图片导演重建；可信作者图可在本地绑定当前具体场景。
 
-真正的状态冲突会触发一次完整重写；重写仍不一致时 `applyConsistencyRecovery()` 拒绝不可靠内容、保持地点/目标/数值/物品/关系不变，并把未经证明的失败行动写入 `lastActionId` 与隔离事实，但不再把它显示成普通快捷选项。唯一例外是玩家点击了当前权威 `quickReplies` 中的精确按钮，或在保存点点击可见的 `copy.continue`，且生成结果只有 `turn.requires_actionable_choices`：`canCommitDisplayedChoiceWithoutGeneratedReplies()` 允许提交已经合法发生的正文与状态，再由 reducer 生成本地可执行选择；状态、支付、地点、任务、图片或普通用户自由输入发生问题时绝不走这条旁路。`resolveConsistencyRecoverySelection()` 与 `applyConsistencyRecoverySelection()` 处理本地出口并立即离开恢复态；自由输入仍走正常开放行动。成功提交任一回合后清除隔离。`repairLegacyConsistencyRecovery()` 同步改写旧正文、文章选项和底部选项；`restoreDeterministicRecoveryChoice()` 进一步识别后来已经由地点、人物和工作合同证明可执行的旧失败行动，将其作为精确本地路线恢复，而不是继续要求玩家放弃。
+真正的状态冲突会触发一次完整重写；重写仍不一致时 `applyConsistencyRecovery()` 拒绝不可靠内容、保持地点/目标/数值/物品/关系不变，并把未经证明的失败行动写入 `lastActionId` 与隔离事实，但不再把它显示成普通快捷选项。如果唯一问题是 `turn.requires_actionable_choices`，`turnPipeline` 允许提交已经合法发生的正文与状态：普通同地图回合只沿用仍有依据且未刚执行的旧选项，危险回合使用 `dangerDirector.methods`，章节继续才按权威状态派生本地出口；没有成立选项时自由输入仍开放，不造占位路线。支付、地点、任务、图片或其他状态问题绝不走这条旁路。`repairLegacyConsistencyRecovery()` 同步改写旧正文、文章选项和底部选项；`restoreDeterministicRecoveryChoice()` 进一步识别后来已经由地点、人物和工作合同证明可执行的旧失败行动，将其作为精确本地路线恢复。
 
 `canonicalizeTurnMetadata()` 还会在回合提交前逐项处理选择：删除不能在新场景中直接行动的旧地点选项，再用 `filterGroundedChoices()` 检查当回合正文与权威人物、地图详情、物品、活动工作和数值定义。中文先拆分稳定实体，把“具体情况、进一步消息、解决办法、调整行程、保存精力”等普通提问/动作修饰语排除，再要求剩余复合词能分解成各自至少两个字、且来自单条可见正文或权威状态的片段；禁止任意二字命中或凭空放入未知人名、地名与物品。匹配 Cartridge 领域规则的选项不再用正文词面放行：只有 `resolveDomainAction()` 返回 `accepted` 才保留，`rejected` 在显示前删除。过滤是逐项而不是整组否决；剩下 `1–5` 项都可直接提交和渲染。
 
-`authoredTurns.ts` 将场景 `0` 的固定 choice id 映射到 `opening.deterministicTurns`，并用 `deterministicChoiceTurns` 处理后续已经成立的合同、固定同行、主路线节点和作者支线按钮。后者必须同时精确匹配当前可见按钮，并满足声明的地点、稳定人物和工作状态；因此这些系统按钮不调用模型但仍经过协议解析、支付 canonicalizer 和回合一致性验证。当前 Cartridge 的可见按钮审计要求每一项都能追溯到确定性回合或 `accepted` 领域规则；本轮放宽中文语义后共审计 `75/75` 个作者按钮，未接管项为 `0`。相似自由输入不会被关键词误捕，继续调用 Adapter。
+`authoredTurns.ts` 将当前仍显示且玩家仍在开局地图节点的固定 choice 映射到 `opening.deterministicTurns`；因此先询价或观察后，未领取的三条开局工作仍由本地固定路线执行，不再受 `scene === 0` 限制。`deterministicChoiceTurns` 处理后续已经成立的合同、固定同行、主路线节点和作者支线按钮；它必须同时精确匹配当前可见按钮，并满足声明的地点、稳定人物和工作状态。所有系统按钮仍经过统一支付/地点/选项校验；相似自由输入不会被关键词误捕，继续调用 Adapter。
 
-七个地图节点分别保存本地工作、社交和休息事实；这些事实进入 Aigram 世界上下文，防止自由生成把所有地点写成同一套活动。危险导演为新存档保留六个完整场景的首轮宽限，且作者/住宿 `session_end` 检查点不再叠加随机危机，避免自然落点被无关判定卡打断。
+七个地图节点分别保存本地工作、社交和休息事实；这些事实进入 Aigram 世界上下文，防止自由生成把所有地点写成同一套活动。危险导演为新存档保留六个完整场景的首轮宽限，威胁选择加入当前地图节点，避免不同路线每轮都重复同一威胁；威胁一旦进入 warning/confrontation 则保持不变直到结算。模型丢失全部危险选项时，reducer 直接使用 Cartridge 配置的三种应对方法，不回退到旧目标文案。
 
 ### 角色视觉身份与图片生成
 

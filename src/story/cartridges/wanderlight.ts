@@ -66,7 +66,40 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
     s('结束今天，休息到清晨', 'End the day and rest until morning'),
   ] as [string, string, string, string, string]
   return {
+    objectiveTransitions: [
+      {
+        from: s('在末班月线离站前挣到今晚的房钱。', 'Earn tonight’s room money before the last Moonline leaves.'),
+        to: s('房钱已经足够；决定今晚住下、继续工作，还是搭月线离开。', 'You can afford a room; decide whether to stay, keep working, or take the Moonline.'),
+        requirements: [
+          { type: 'stat', id: 'coin', min: 10, reason: '' },
+          { type: 'fact', id: 'lodging_secured', notEquals: true, reason: '' },
+        ],
+      },
+      {
+        from: s('房钱已经足够；决定今晚住下、继续工作，还是搭月线离开。', 'You can afford a room; decide whether to stay, keep working, or take the Moonline.'),
+        to: s('在末班月线离站前挣到今晚的房钱。', 'Earn tonight’s room money before the last Moonline leaves.'),
+        requirements: [
+          { type: 'stat', id: 'coin', max: 9, reason: '' },
+          { type: 'fact', id: 'lodging_secured', notEquals: true, reason: '' },
+        ],
+      },
+    ],
     rules: [
+      {
+        id: 'clarify-spending-target', intent: s('澄清钱要花在什么上', 'clarify what the money should buy'),
+        matchMode: 'exact',
+        match: zh
+          ? ['把钱全部花完', '把所有钱都花掉', '把钱花完', '花光所有钱', '把剩下的钱都花掉']
+          : ['spend all my money', 'spend every coin', 'spend the rest of my money', 'use up all my money'],
+        requirements: [],
+        effects: [],
+        successText: s('你还没有说明想买什么，所以没有发生交易，余额保持不变。先选定具体的商品或服务，系统才会确认价格并扣款。', 'You have not said what you want to buy, so no transaction occurs and your balance stays unchanged. Choose a specific good or service before any price is confirmed or coin is deducted.'),
+        successChoices: [
+          s('买一顿热饭', 'Buy a hot meal'),
+          s('找一份短工', 'Look for a short job'),
+          s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'),
+        ],
+      },
       {
         id: 'catch-breath', intent: s('原地休息四十五分钟', 'rest in place for forty-five minutes'),
         match: [s('原地坐下，休息四十五分钟', 'sit down and rest for forty-five minutes'), s('再休息四十五分钟', 'rest for another forty-five minutes'), s('原地休息', 'rest in place'), s('慢慢恢复呼吸', 'catch my breath')],
@@ -281,7 +314,8 @@ function make(locale: Locale): StoryCartridge {
             localSideTurn('收好钱币，做完就走', '灯湾码头', '你确认上一回合的收入已经记录，没有接下罗温后续的地图差事。路线箱重新扣紧，灯湾码头仍有短工、热饭和可以歇脚的地方。', { characterIds: ['rowan-hale'] }),
             localSideTurn('问罗温哪条夜班路线最缺人', '灯湾码头', '罗温核对招工牌，说明今晚各站的缺口会分别贴在本地告示上。询问不会替你接受工作，也不会提前获得报酬；当前码头仍有可当场确认的短工、热饭和休息处。', { characterIds: ['rowan-hale'] }),
             localSideTurn('留在灯湾继续找短工', '灯湾码头', '你告诉罗温这次不随地图上车，留在灯湾查看本地招工牌。他接受你的决定；新的工作只有在你明确接受并完成后才会结算。', { characterIds: ['rowan-hale'] }),
-            localSideTurn('告诉罗温你今晚只想休息', '远灯研修院', '你把界限说清楚：今晚不再接新差事。罗温没有劝你改变主意，只指出客房、食堂和仍亮着灯的短工告示。', { characterIds: ['rowan-hale'] }),
+            localSideTurn('告诉罗温今晚只想找房间休息', '远灯研修院', '你把界限说清楚：今晚不再接新差事。罗温没有劝你改变主意，只指出客房、食堂和仍亮着灯的短工告示。询问房间不会替你付款或预订。', { characterIds: ['rowan-hale'] }),
+            localSideTurn('告诉罗温你今晚只想休息', '远灯研修院', '你把界限说清楚：今晚不再接新差事。罗温没有劝你改变主意，只指出客房、食堂和仍亮着灯的短工告示。询问房间不会替你付款或预订。', { characterIds: ['rowan-hale'] }),
             localSideTurn('收好钱币，离开舞台', '杯影夜市', '你确认上一回合的收入已经记录，和塞莱斯特说明这次搬运到此结束。你离开舞台边，杯影夜市的食摊、短工牌和长凳仍在营业。', { characterIds: ['celeste-ardin'] }),
             localSideTurn('问她演出为什么突然停了', '杯影夜市', '塞莱斯特检查潮湿的琴弦，告诉你雨水让音准失稳，必须等弦线干燥后才能继续。她没有要求你留下；夜市里仍有别的短工和休息处。', { characterIds: ['celeste-ardin'] }),
             localSideTurn('留在夜市找其他演出工作', '杯影夜市', '你留在杯影夜市询问下一场演出的临时工作。摊主把搬运、清场和布台三类告示指给你看，报酬都只在工作完成后结清。', { characterIds: ['celeste-ardin'] }),

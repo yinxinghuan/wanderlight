@@ -93,7 +93,9 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
   if (!source || !cartridge.domainRules?.rules.length) return undefined
   const candidate = cartridge.domainRules.rules
     .map((rule, index) => {
-      const matches = rule.match.map(normalized).map((keyword) => matchStrength(source, keyword)).filter(Boolean)
+      const matches = rule.match.map(normalized).map((keyword) => rule.matchMode === 'exact'
+        ? source === keyword ? 1000 + keyword.length : 0
+        : matchStrength(source, keyword)).filter(Boolean)
       return matches.length ? { rule, index, score: matches.length * 1000 + Math.max(...matches) } : null
     })
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
@@ -180,6 +182,12 @@ export function syncDomainDerivedState(save: StorySave, cartridge: StoryCartridg
     } else metrics.unshift({ id: definition.metricId, label: definition.label, value })
     item.metrics = metrics
   })
+  const objectiveBeforeSync = save.objective
+  const objectiveTransition = cartridge.domainRules?.objectiveTransitions?.find((transition) => (
+    normalized(transition.from) === normalized(objectiveBeforeSync)
+    && transition.requirements.every((requirement) => requirementMet(requirement, save))
+  ))
+  if (objectiveTransition) save.objective = objectiveTransition.to
   return save
 }
 
@@ -247,6 +255,7 @@ export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge
       save.map.forEach((node) => { node.current = node.id === target.id })
       target.visited = true
       save.location = target.label
+      save.sceneLocation = target.label
       blocks.push({ id, kind: 'event', text: `${cartridge.locale === 'zh' ? '抵达' : 'Arrived at'} ${target.label}`, data: { mapId: target.id, domainRule: resolution.ruleId } })
     }
     if (effect.type === 'danger') {

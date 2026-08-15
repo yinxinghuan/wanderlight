@@ -1,7 +1,7 @@
 import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVisualIdentity, type DangerDirective, type DomainActionResolution, type ImageBlockStatus, type ParsedCommand, type ParsedScene, type SceneImageSubject, type StoryBlock, type StoryCartridge, type StoryCharacter, type StorySave } from '../types'
 import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
-import { createInitialDangerState, normalizeDangerState, settleDangerTurn } from './dangerDirector'
+import { createInitialDangerState, dangerDirectiveChoices, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
 import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
@@ -15,7 +15,7 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
   const initialPartyMemberIds = cartridge.initialPartyMemberIds ?? cartridge.characters.filter((character) => character.initialStatus === 'companion').map((character) => character.id)
   const initial: StorySave = {
     version: 10, cartridgeId: cartridge.id, locale: cartridge.locale, remoteChatId, entered: false, scene: 0,
-    location: cartridge.opening.location, time: cartridge.opening.time, objective: cartridge.opening.objective,
+    location: cartridge.opening.location, sceneLocation: cartridge.opening.location, time: cartridge.opening.time, objective: cartridge.opening.objective,
     decisionContext: '',
     stats: Object.fromEntries(cartridge.statDefinitions.map((stat) => [stat.id, stat.initial])),
     facts: { ...(cartridge.initialFacts ?? {}) },
@@ -248,14 +248,34 @@ export function localizeKnownState(save: StorySave, from: StoryCartridge, to: St
   })
   const locationId = sourceNodeByLabel.get(save.location)
   const openingLocation = save.location === from.opening.location ? to.opening.location : undefined
+  const localizedLocation = openingLocation ?? (locationId ? targetNodeById.get(locationId)?.label ?? save.location : save.location)
+  const sourceSceneLocation = save.sceneLocation ?? save.location
+  const sceneLocation = sourceSceneLocation === save.location
+    ? localizedLocation
+    : locationId && sourceSceneLocation.includes(save.location)
+      ? sourceSceneLocation.replace(save.location, localizedLocation)
+      : sourceSceneLocation
+  const sourceObjectiveTransitions = from.domainRules?.objectiveTransitions ?? []
+  const targetObjectiveTransitions = to.domainRules?.objectiveTransitions ?? []
+  const objectiveTransitionIndex = sourceObjectiveTransitions.findIndex((transition) => (
+    transition.from === save.objective || transition.to === save.objective
+  ))
+  const localizedObjective = save.objective === from.opening.objective
+    ? to.opening.objective
+    : objectiveTransitionIndex >= 0
+      ? save.objective === sourceObjectiveTransitions[objectiveTransitionIndex].from
+        ? targetObjectiveTransitions[objectiveTransitionIndex]?.from ?? save.objective
+        : targetObjectiveTransitions[objectiveTransitionIndex]?.to ?? save.objective
+      : save.objective
   const inventoryById = new Map(to.initialInventory.map((item) => [item.id, item]))
   const charactersById = new Map(to.characters.map((character) => [character.id, character]))
   return {
     ...save,
     locale: to.locale,
-    location: openingLocation ?? (locationId ? targetNodeById.get(locationId)?.label ?? save.location : save.location),
+    location: localizedLocation,
+    sceneLocation,
     time: save.time === from.opening.time ? to.opening.time : save.time,
-    objective: save.objective === from.opening.objective ? to.opening.objective : save.objective,
+    objective: localizedObjective,
     map,
     inventory: save.inventory.map((item) => {
       const target = inventoryById.get(item.id)
@@ -528,6 +548,41 @@ function validChoiceLabels(labels: string[]): string[] {
     .slice(0, 5)
 }
 
+function deriveReplylessChoices(
+  save: StorySave,
+  next: StorySave,
+  parsed: ParsedScene,
+  effects: StoryBlock[],
+  cartridge: StoryCartridge,
+  actionId: string,
+): StorySave['choices'] {
+  if (save.location !== next.location) return []
+  const candidates = save.choices
+    .filter((choice) => choice.label.trim() !== actionId.trim())
+    .map((choice, index) => ({ id: `derived-${next.scene}-${index}`, label: choice.label }))
+  const context = { ...next, blocks: [...next.blocks, ...effects] }
+  // Ground the carry-over against the state in which those choices were
+  // originally offered, plus the newly committed prose. `next.blocks`
+  // already contains the new action marker, which intentionally closes the
+  // previous turn's context window and would otherwise erase every valid
+  // sibling choice before the new blocks are appended.
+  const grounded = new Set(filterGroundedChoices(candidates, save, cartridge, [...parsed.blocks, ...effects]).map((choice) => choice.label))
+  const retained = candidates.filter((choice) => {
+    const domain = resolveDomainAction(context, cartridge, choice.label)
+    return domain ? domain.status === 'accepted' : grounded.has(choice.label)
+  })
+  if (retained.length || !save.sessionEnded) return retained.slice(0, 5)
+  // A player explicitly continuing from a checkpoint has no previous tray to
+  // carry forward. In that one case, derive local exits from authoritative
+  // state; this is continuation, not consistency-error recovery.
+  const resumeCandidates = createRecoveryChoices(next, cartridge)
+  const resumeGrounded = new Set(filterGroundedChoices(resumeCandidates, context, cartridge, [...parsed.blocks, ...effects]).map((choice) => choice.label))
+  return resumeCandidates.filter((choice) => {
+    const domain = resolveDomainAction(context, cartridge, choice.label)
+    return domain ? domain.status === 'accepted' : resumeGrounded.has(choice.label)
+  }).slice(0, 5)
+}
+
 function cleanInferredItemLabel(value: string): string {
   return value
     .replace(/^[\s“”"「」『』]+|[\s“”"「」『』]+$/g, '')
@@ -587,8 +642,13 @@ export function applyParsedScene(
     : undefined
   const transition = createTransitionBlock(save, commandDestination?.type === 'map_update' ? commandDestination.location : domainDestination, cartridge)
   const next: StorySave = {
-    ...save, locale: cartridge.locale, scene: save.scene + 1,
-    blocks: [...save.blocks, { id: `action-${save.scene + 1}`, kind: 'event', text: actionId }, ...(transition ? [transition] : []), ...parsed.blocks],
+    ...save, locale: cartridge.locale, scene: save.scene + 1, sceneLocation: save.sceneLocation ?? save.location,
+    blocks: [
+      ...save.blocks,
+      { id: `action-${save.scene + 1}`, kind: 'event', text: actionId },
+      ...(transition ? [transition] : []),
+      ...(domainResolution ? [] : parsed.blocks),
+    ],
     choices: [], relationships: [...save.relationships], jobs: save.jobs.map((job) => ({ ...job })),
     map: save.map.map((node) => ({ ...node })), inventory: save.inventory.map((item) => ({ ...item })),
     characters: save.characters.map((character) => ({ ...character, skills: character.skills.map((skill) => ({ ...skill })), visualIdentity: character.visualIdentity ? cloneVisualIdentity(character.visualIdentity) : undefined })),
@@ -660,8 +720,10 @@ export function applyParsedScene(
         detail: command.detail, lore: command.lore, facts: command.facts,
       })
       next.location = command.location
+      next.sceneLocation = command.location
       effects.push({ id: effectId, kind: 'event', text: t(cartridge.locale, 'arrived', { name: command.location }), data: { arrival: command.location } })
     }
+    if (command.type === 'scene_location') next.sceneLocation = command.location
     if (command.type === 'inventory') {
       const existing = next.inventory.find((item) => item.label === command.item || item.id === command.item)
       let changed = false
@@ -759,7 +821,11 @@ export function applyParsedScene(
       return domain ? domain.status === 'accepted' : textGrounded.has(choice.label)
     })
   }
-  if (!next.sessionEnded && next.choices.length === 0) next.choices = createRecoveryChoices(next, cartridge)
+  if (!next.sessionEnded && next.choices.length === 0) {
+    next.choices = activeDangerDirective
+      ? dangerDirectiveChoices(activeDangerDirective, next.scene)
+      : deriveReplylessChoices(save, next, parsed, effects, cartridge, actionId)
+  }
 
   const floor = activeStatFloorRule(next, cartridge)
   if (!next.sessionEnded && floor) {
@@ -795,7 +861,7 @@ export function applyParsedScene(
   next.blocks = [
     ...next.blocks,
     ...effects,
-    ...(image.prompt ? [createImageBlock(`image-${next.scene}`, next.location, image.prompt, 'queued', '', {
+    ...(image.prompt ? [createImageBlock(`image-${next.scene}`, next.sceneLocation ?? next.location, image.prompt, 'queued', '', {
       source: image.source ?? 'director', reason: image.reason ?? 'cadence', promptVersion: String(SCENE_IMAGE_PROMPT_VERSION),
       playerVisible: image.playerVisible ? 'true' : 'false',
       ...(image.identityCharacterId ? { identityCharacterId: image.identityCharacterId } : {}),

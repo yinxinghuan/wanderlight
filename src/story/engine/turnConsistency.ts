@@ -12,6 +12,12 @@ function effectiveLocation(save: StorySave, parsed: ParsedScene): string {
   return update?.type === 'map_update' ? update.location : save.location
 }
 
+function sceneBelongsToMapLocation(sceneLocation: string, mapLocation: string): boolean {
+  const scene = clean(sceneLocation)
+  const map = clean(mapLocation)
+  return scene === map || scene.includes(map)
+}
+
 function visibleProse(parsed: ParsedScene): string {
   return parsed.blocks
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
@@ -46,17 +52,21 @@ export function canonicalizeTurnMetadata(
 ): { parsed: ParsedScene; imagePrompt?: string; discardedImage: boolean } {
   let commands = parsed.commands
   let originalSceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
-  const hasMapUpdate = commands.some((command) => command.type === 'map_update')
-  if (!hasMapUpdate && originalSceneLocations.length === 1
-    && clean(originalSceneLocations[0].location) !== clean(save.location)
-    && clean(originalSceneLocations[0].location).includes(clean(save.location))) {
-    commands = commands.map((command) => command.type === 'scene_location'
-      ? { ...command, location: save.location }
-      : command.type === 'image_location' && clean(command.location).includes(clean(save.location))
-        ? { ...command, location: save.location }
-        : command)
+  // Models occasionally repeat an otherwise identical response during a
+  // repair. Collapse equivalent location metadata before sublocation
+  // canonicalization; doing this afterwards leaves one duplicated
+  // "Quay hotel" label looking like a teleport away from "Quay".
+  if (originalSceneLocations.length > 1 && originalSceneLocations.every((command) => clean(command.location) === clean(originalSceneLocations[0].location))) {
+    let retained = false
+    commands = commands.filter((command) => {
+      if (command.type !== 'scene_location') return true
+      if (retained) return false
+      retained = true
+      return true
+    })
     originalSceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
   }
+  const hasMapUpdate = commands.some((command) => command.type === 'map_update')
   if (!hasMapUpdate && originalSceneLocations.length === 1 && clean(originalSceneLocations[0].location) !== clean(save.location)) {
     const destination = save.map.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
       ?? cartridge.initialMap.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
@@ -75,7 +85,7 @@ export function canonicalizeTurnMetadata(
   const sceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
   const imageLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'image_location' }> => command.type === 'image_location')
 
-  if (sceneLocations.length === 0) commands = [...commands, { type: 'scene_location', location }]
+  if (sceneLocations.length === 0) commands = [...commands, { type: 'scene_location', location: hasMapUpdate ? location : save.sceneLocation ?? location }]
   else if (sceneLocations.length > 1 && sceneLocations.every((command) => clean(command.location) === clean(sceneLocations[0].location))) {
     let retained = false
     commands = commands.filter((command) => {
@@ -94,7 +104,8 @@ export function canonicalizeTurnMetadata(
   let safeImagePrompt = imagePrompt
   let discardedImage = false
   if (imagePrompt && imageLocations.length === 0) {
-    if (trustedAuthored) commands = [...commands, { type: 'image_location', location }]
+    const boundSceneLocation = commands.find((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')?.location ?? location
+    if (trustedAuthored) commands = [...commands, { type: 'image_location', location: boundSceneLocation }]
     else {
       safeImagePrompt = undefined
       discardedImage = true
@@ -124,6 +135,8 @@ export function canonicalizeTurnMetadata(
         .slice(0, 5)
         .map((label, index) => ({ id: `candidate-${index}`, label }))
       const mapUpdate = commands.find((entry): entry is Extract<ParsedCommand, { type: 'map_update' }> => entry.type === 'map_update')
+      const objectiveUpdate = [...commands].reverse().find((entry): entry is Extract<ParsedCommand, { type: 'state' }> => entry.type === 'state')
+      const sceneLocationUpdate = [...commands].reverse().find((entry): entry is Extract<ParsedCommand, { type: 'scene_location' }> => entry.type === 'scene_location')
       const offeredJobs = commands.filter((entry): entry is Extract<ParsedCommand, { type: 'job' }> => entry.type === 'job' && entry.action === 'offer')
       const groundedMap = mapUpdate
         ? save.map.map((node) => clean(node.label) === clean(mapUpdate.location)
@@ -133,6 +146,8 @@ export function canonicalizeTurnMetadata(
       const candidateSave = {
         ...save,
         location,
+        sceneLocation: sceneLocationUpdate?.location ?? save.sceneLocation ?? location,
+        objective: objectiveUpdate?.value ?? save.objective,
         map: groundedMap,
         jobs: [
           ...save.jobs,
@@ -178,9 +193,20 @@ export function canCommitDisplayedChoiceWithoutGeneratedReplies(
     && violations.every((violation) => violation === 'turn.requires_actionable_choices')
 }
 
+/** A generated consequence is still safe to commit when only its suggested
+ * replies were filtered out. Payment, location, objective, and other state
+ * violations must still repair or reject the whole draft. */
+export function canCommitGeneratedTurnWithoutReplies(violations: string[]): boolean {
+  return violations.length > 0 && violations.every((violation) => violation === 'turn.requires_actionable_choices')
+}
+
 function stalePlaceChoice(choice: string, location: string, save: StorySave): boolean {
   const destinationVerb = /(?:前往|去往|去|返回|回到|搭乘|乘坐|乘车到|坐到|陪.+到|买票|离开|赶往|送去|送到|带去|护送|通往|检查.+支线|travel|go to|head to|return|ride|take .* to|leave for|deliver .* to|bring .* to|escort .* to)/i
-  return save.map.some((node) => node.label !== location && clean(choice).includes(clean(node.label)) && !destinationVerb.test(choice))
+  const mapChanged = clean(location) !== clean(save.location)
+  return save.map.some((node) => (mapChanged || !node.current)
+    && clean(node.label) !== clean(location)
+    && clean(choice).includes(clean(node.label))
+    && !destinationVerb.test(choice))
 }
 
 export function validateTurnConsistency(
@@ -198,12 +224,12 @@ export function validateTurnConsistency(
   const prose = visibleProse(parsed)
 
   if (sceneLocations.length !== 1) violations.add('turn.requires_one_scene_location')
-  else if (clean(sceneLocations[0].location) !== clean(location)) violations.add('turn.scene_location_must_match_state')
+  else if (!sceneBelongsToMapLocation(sceneLocations[0].location, location)) violations.add('turn.scene_location_must_match_state')
   if (mapUpdates.length > 1) violations.add('turn.allows_one_map_update')
 
   if (imagePrompt) {
     if (imageLocations.length !== 1) violations.add('image.requires_one_image_location')
-    else if (clean(imageLocations[0].location) !== clean(location)) violations.add('image.location_must_match_scene')
+    else if (sceneLocations.length !== 1 || clean(imageLocations[0].location) !== clean(sceneLocations[0].location)) violations.add('image.location_must_match_scene')
   } else if (imageLocations.length) violations.add('image.location_without_image')
 
   if (!parsed.commands.some((command) => command.type === 'session_end') && !choices.length) violations.add('turn.requires_actionable_choices')

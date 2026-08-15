@@ -1,5 +1,5 @@
 import { listCartridges } from '../src/story/cartridges/index'
-import { canonicalizePaymentMetadata, repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
+import { actionAuthorizesCoinSpend, canonicalizePaymentMetadata, repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyParsedScene, createInitialSave } from '../src/story/engine/reducer'
 
@@ -8,6 +8,8 @@ function equal(actual: unknown, expected: unknown, message: string) { if (actual
 
 const cartridge = listCartridges('zh')[0]
 const initial = createInitialSave(cartridge)
+const englishCartridge = listCartridges('en')[0]
+const englishInitial = createInitialSave(englishCartridge)
 
 const offered = parseStoryProtocol(`媛夕说：“再帮我把木箱送上车，我付你八枚钱币。”
 [job: action="offer" id="mira-seed-crate" label="把种荚木箱送上月线" employer="媛夕" wage="8"]`, 'zh')
@@ -33,6 +35,11 @@ ok(duplicateViolations.includes('job.settlement_cannot_repeat'), '已结算合�
 const afterDuplicateReducer = applyParsedScene(afterSettlement, settled, cartridge, '再次领取')
 equal(afterDuplicateReducer.stats.coin, 14, 'reducer 也必须防止重复入账')
 equal(afterDuplicateReducer.facts.jobs_completed, 1, '重复请求不能增加完工次数')
+
+const englishCountsOut = canonicalizePaymentMetadata(englishInitial, parseStoryProtocol(`Together you carry all three wooden cases across the wet aisle and set them on the dry platform. When the last case is secure, Celeste counts out 7 coin on the spot.
+[widget: coin, add: 7]`, 'en'), englishCartridge, 'Help move cases at the night market')
+equal(validatePaymentConsistency(englishInitial, englishCountsOut, englishCartridge, 'Help move cases at the night market').length, 0, 'English counts-out wages must be recognized as a visible completed payment')
+equal(applyParsedScene(englishInitial, englishCountsOut, englishCartridge, 'Help move cases at the night market').stats.coin, 13, 'English counts-out wages must settle exactly once')
 
 const screenshot = parseStoryProtocol('最后一个箱子被封好，短发女人露出满意的笑容，掏出几枚铜板递给你。', 'zh')
 const screenshotViolations = validatePaymentConsistency(initial, screenshot, cartridge)
@@ -74,6 +81,13 @@ ok(validatePaymentConsistency(afterOffer, mismatch, cartridge).includes('job.set
 const purchase = parseStoryProtocol('你支付了三枚钱币买下车票。\n[widget: coin, remove: 3]', 'zh')
 equal(validatePaymentConsistency(initial, purchase, cartridge, '买票').length, 0, '玩家明确授权后的支出和扣款应一致')
 equal(applyParsedScene(initial, purchase, cartridge, '买票').stats.coin, 3, '实际消费必须扣账')
+equal(actionAuthorizesCoinSpend('把钱全部花完', 'zh'), false, '只有预算没有购买对象时不能替玩家决定消费')
+equal(actionAuthorizesCoinSpend('把所有钱都花掉', 'zh'), false, '泛化消费的另一种词序也不能绕过购买对象')
+equal(actionAuthorizesCoinSpend('把钱花在码头旅店的房费上', 'zh'), true, '明确消费对象后才构成授权')
+equal(actionAuthorizesCoinSpend('spend all my money', 'en'), false, 'generic English spending intent also requires a purchase object')
+equal(actionAuthorizesCoinSpend('spend 3 coin on a train ticket', 'en'), true, 'English spending with an explicit object is authorized')
+const genericSpentDraft = parseStoryProtocol('你掏出仅有的六枚钱币，决定全部花掉。\n[widget: coin, remove: 6]', 'zh')
+ok(validatePaymentConsistency(initial, genericSpentDraft, cartridge, '把钱全部花完').includes('payment.purchase_requires_player_authorization'), '正文声称泛化消费完成时也必须被事务校验拦截')
 
 const unauthorizedRoom = parseStoryProtocol('你用这枚硬币支付了码头楼上旅店的房费。\n[widget: coin, add: 1]', 'zh')
 const unauthorizedRoomViolations = validatePaymentConsistency(initial, unauthorizedRoom, cartridge, '寻找其他交通或住宿方案')

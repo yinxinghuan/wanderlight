@@ -6,6 +6,13 @@ export function wanderlightV1Content(locale: Locale): DemoTurn[] {
     ? `乘务员把招工牌放低。那是个三十一岁的男人，黑色短卷发，戴窄边金属眼镜，靛蓝外套左领夹着银色票夹。他没有先问你的名字，而是把一只打开的路线箱推到你面前。\n\n箱盖内侧的值班卡写着“罗温·黑尔”。几张被雨打湿的路线卡粘在一起，沿海地图也泡皱了一角。\n\n[罗温] [main] [冷静]: "先把颜色相同的路线卡分开。二十分钟，六枚钱币。地图不用你修，除非你真的会。"\n\n你按颜色分开路线卡，又用吸水布垫住地图湿角。二十分钟后，罗温验完最后一叠卡，把六枚钱币当场交给你。\n[character_update: character_id="rowan-hale" character="罗温" role="31 岁 · 月线乘务与地图修复师" detail="在灯湾月台整理被雨打湿的夜班路线" vitality="74" stress="31"]\n[widget: coin, add: 6]\n[reputation: npc="罗温" action="helped"]\n[choices: "帮罗温把泡皱的地图压平"|"收好钱币，做完就走"|"问罗温哪条夜班路线最缺人"]`
     : `The steward lowers the hiring sign. He is thirty-one, with close-curled black hair, narrow metal glasses, and a silver ticket clip on the left lapel of his indigo coat. Instead of asking your name, he pushes an open route case toward you.\n\nThe duty card inside the lid reads “Rowan Hale.” Several rain-soaked route cards have stuck together, and one corner of the coastal map has buckled.\n\n[Rowan Hale] [main] [calm]: "Separate the route cards by color first. Twenty minutes, 6 coin. Leave the map unless you actually know how to mend paper."\n\nYou sort the route cards by color and protect the wet map corner with absorbent cloth. Twenty minutes later, Rowan checks the final stack and pays you 6 coin on the spot.\n[character_update: character_id="rowan-hale" character="Rowan Hale" role="Age 31 · Moonline steward and map restorer" detail="Sorting rain-damaged night routes at Lantern Quay" vitality="74" stress="31"]\n[widget: coin, add: 6]\n[reputation: npc="Rowan Hale" action="helped"]\n[choices: "Help Rowan flatten the buckled map"|"Pocket the coin and leave after the shift"|"Ask Rowan which night route needs workers"]`
 
+  const rowanDebutContract = rowanDebut.replace(
+    '[widget: coin, add: 6]',
+    zh
+      ? '[job: action="offer" id="rowan-opening-route-cards" label="整理被雨打湿的夜班路线卡" employer="罗温" wage="6"]\n[job: action="settle" id="rowan-opening-route-cards"]'
+      : '[job: action="offer" id="rowan-opening-route-cards" label="Sort the rain-soaked night route cards" employer="Rowan Hale" wage="6"]\n[job: action="settle" id="rowan-opening-route-cards"]',
+  )
+
   const rowanWork = zh
     ? `你没有去抹开湿纸，而是先垫上吸水布，再从地图干燥的一边慢慢压平。罗温看见你的手法，把准备阻止你的手收了回去。\n\n最后一张路线卡归位时，他把地图转向你。远灯研修院旁边有一段海岸线被雨水洗掉了。那是一所只招收成年人的职业研修院，今晚正有人等这张图安排物资。\n\n[罗温] [main] [认真]: "我得亲自送过去。你可以搭这班车，也可以拿着工钱去别处。别因为我开口，就把它当成欠我的。"\n[reputation: npc="罗温" action="trusted"]\n[choices: "和罗温把地图送去远灯研修院"|"留在灯湾继续找短工"|"先上月线，在车厢里休息"]`
     : `You do not smear the wet paper. You place absorbent cloth beneath it and work slowly from the dry edge. Rowan notices the method and lowers the hand he was about to use to stop you.\n\nWhen the last route card is sorted, he turns the map toward you. Rain has erased part of the coast beside Far Lantern Institute, an adult vocational campus waiting on this map to schedule supplies tonight.\n\n[Rowan Hale] [main] [serious]: "I need to deliver it myself. You may ride with me, or take your pay elsewhere. An invitation is not a debt."\n[reputation: npc="Rowan Hale" action="trusted"]\n[choices: "Deliver the map to Far Lantern Institute with Rowan"|"Stay in Lantern Quay and find more work"|"Board the Moonline and rest in the carriage"]`
@@ -25,6 +32,13 @@ export function wanderlightV1Content(locale: Locale): DemoTurn[] {
   const celesteDebut = zh
     ? celesteDebutBase.replace('腾出手指挥别人搬木箱。', '腾出手指挥别人搬木箱。舞台旁还叠着一排没有摆开的折叠椅。')
     : celesteDebutBase.replace('with her free hand.', 'with her free hand. A row of folded chairs is still stacked beside the stage.')
+
+  const celesteDebutContract = celesteDebut.replace(
+    '[widget: coin, add: 7]',
+    zh
+      ? '[job: action="offer" id="celeste-opening-stage-cases" label="把三只舞台木箱搬到干燥处" employer="塞莱斯特" wage="7"]\n[job: action="settle" id="celeste-opening-stage-cases"]'
+      : '[job: action="offer" id="celeste-opening-stage-cases" label="Move three stage cases to the dry platform" employer="Celeste Ardin" wage="7"]\n[job: action="settle" id="celeste-opening-stage-cases"]',
+  )
 
   const celesteWorkBase = zh
     ? `你把椅子摆成半圆，特意给湿透的过道留出一条宽路。塞莱斯特走上台试了几步，鞋跟没有再碰到箱角。\n\n她打开琴箱，里面是一把没有琴弓的低音乐器。今晚的弓断了，真正的演出得等到潮汐群岛；那里有个修弓的人，也有她答应过的一场清晨演出。\n\n[塞莱斯特] [main] [打量]: "你会留路给别人走，这比搬得快少见。我要赶末班车。你可以同行，但我不会因为你帮过忙，就替你付下一程。"\n[reputation: npc="塞莱斯特" action="trusted"]\n[choices: "和塞莱斯特搭月线去潮汐群岛"|"留在夜市找其他演出工作"|"先问清群岛清晨的工作报酬"]`
@@ -47,11 +61,11 @@ export function wanderlightV1Content(locale: Locale): DemoTurn[] {
     : celesteReunionBase
 
   return [
-    { match: zh ? ['乘务员', '夜班工作', '夜班'] : ['steward', 'night shift', 'vacant'], content: rowanDebut, imagePrompt: 'Lantern Quay railway platform at blue hour, Rowan Hale sorting blank colored route cards beside an open route case and a rain-damaged map, one dominant adult identity, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'rowan-hale' },
+    { match: zh ? ['乘务员', '夜班工作', '夜班'] : ['steward', 'night shift', 'vacant'], content: rowanDebutContract, imagePrompt: 'Lantern Quay railway platform at blue hour, Rowan Hale sorting blank colored route cards beside an open route case and a rain-damaged map, one dominant adult identity, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'rowan-hale' },
     { match: zh ? ['地图压平', '泡皱', '地图'] : ['flatten', 'buckled map', 'mend paper'], content: rowanWork },
     { match: zh ? ['送去远灯', '罗温把地图', '远灯研修院'] : ['deliver the map', 'with Rowan', 'Far Lantern'], content: rowanTransit, imagePrompt: 'inside a warm Moonline carriage leaving Lantern Quay, waterproof map tube and route case beside two separate seats, environmental transition, no clear faces, no text, no UI, 4:3', imageSubject: 'environment' },
     { match: zh ? ['缺失的海岸线', '到站后', '研修院'] : ['missing stretch', 'train arrives', 'Institute'], content: rowanReunion, imagePrompt: 'Far Lantern Institute adult workshop courtyard at night, Rowan Hale delivering a waterproof map tube beside pottery and repair workshops, one dominant adult identity, no uniforms, no minors, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'rowan-hale' },
-    { match: zh ? ['夜市帮忙', '搬箱子', '夜市'] : ['move cases', 'night market', 'cases at the market'], content: celesteDebut, imagePrompt: 'Cupshadow night market after rain, Celeste Ardin bracing one black instrument case while directing plain wooden stage cases beneath canvas awnings, one dominant adult identity, no duplicate instrument case, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'celeste-ardin' },
+    { match: zh ? ['夜市帮忙', '搬箱子', '夜市'] : ['move cases', 'night market', 'cases at the market'], content: celesteDebutContract, imagePrompt: 'Cupshadow night market after rain, Celeste Ardin bracing one black instrument case while directing plain wooden stage cases beneath canvas awnings, one dominant adult identity, no duplicate instrument case, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'celeste-ardin' },
     { match: zh ? ['折叠椅', '摆好', '演出停'] : ['folding chairs', 'performance stopped', 'arrange'], content: celesteWork },
     { match: zh ? ['去潮汐群岛', '和塞莱斯特去', '清晨的工作'] : ['Tidal Islands with Celeste', 'dawn job', 'Take the Moonline'], content: celesteTransit, imagePrompt: 'inside a Moonline carriage along the moonlit sea wall, one closed black instrument case beside a seat and tidal sandbars outside, environmental transition, no clear faces, no text, no UI, 4:3', imageSubject: 'environment' },
     { match: zh ? ['清晨演出', '群岛后', '唱给谁'] : ['dawn concert', 'reaching the islands', 'concert is for'], content: celesteReunion, imagePrompt: 'Tidal Islands before dawn, Celeste Ardin at a wooden bridgehead with one closed instrument case and repaired bow, fishing nets and repair sheds behind her, one dominant adult identity, no readable text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'celeste-ardin' },

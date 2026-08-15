@@ -140,8 +140,10 @@ function carriesOpeningResidue(cartridge: StoryCartridge, next: StorySave, parse
 }
 
 function latestLocation(next: StorySave, parsed: ParsedScene): string {
+  const scene = [...parsed.commands].reverse().find((command) => command.type === 'scene_location')
+  if (scene?.type === 'scene_location') return scene.location
   const update = [...parsed.commands].reverse().find((command) => command.type === 'map_update')
-  return update?.type === 'map_update' ? update.location : next.location
+  return update?.type === 'map_update' ? update.location : next.sceneLocation ?? next.location
 }
 
 function playerIsVisible(parsed: ParsedScene, proposal?: string, subject?: SceneImageSubject): boolean {
@@ -200,7 +202,7 @@ export function upgradePendingSceneImagePrompts(save: StorySave, cartridge: Stor
       commands: [],
       raw: '',
     }
-    const historical = { ...save, location: block.text || save.location }
+    const historical = { ...save, sceneLocation: block.text || save.sceneLocation || save.location }
     const visible = playerIsVisible(parsed)
     changed = true
     return {

@@ -59,9 +59,11 @@ function scheduledTurn(cartridge: StoryCartridge, cycle: number): number {
   return minimum + stableHash(`${cartridge.id}:danger-cycle:${cycle}`) % (maximum - minimum + 1)
 }
 
-function selectThreat(cartridge: StoryCartridge, cycle: number): string {
+function selectThreat(save: Pick<StorySave, 'location' | 'map'>, cartridge: StoryCartridge, cycle: number): string {
   const threats = cartridge.dangerDirector?.threatPalette ?? []
-  return threats[stableHash(`${cartridge.id}:threat:${cycle}`) % Math.max(1, threats.length)] ?? 'an immediate world-appropriate threat'
+  const currentNode = save.map.find((node) => node.current)
+  const placeKey = currentNode?.id ?? save.location
+  return threats[stableHash(`${cartridge.id}:threat:${placeKey}:${cycle}`) % Math.max(1, threats.length)] ?? 'an immediate world-appropriate threat'
 }
 
 function dangerCheck(save: StorySave, cartridge: StoryCartridge, actionId: string, severity: number) {
@@ -91,7 +93,7 @@ export function buildDangerDirective(save: StorySave, cartridge: StoryCartridge,
   const risk = riskSeverity(save, cartridge)
   const baseSeverity = Math.max(risk, 2 + stableHash(`${cartridge.id}:severity:${state.cycle}`) % 2)
   const severity = clamp(state.severity > 1 ? Math.max(state.severity, risk) : baseSeverity, 1, 5)
-  const threat = state.currentThreat ?? selectThreat(cartridge, state.cycle)
+  const threat = state.currentThreat ?? selectThreat(save, cartridge, state.cycle)
   const shared = { severity, threat, methods: config.methods, physicalCombat: config.physicalCombat } as const
 
   if (state.phase === 'warning') return { phase: 'confrontation', ...shared }
@@ -118,6 +120,15 @@ DANGER DIRECTIVE IS AUTHORITATIVE. Escalate the established threat into an immed
   const check = directive.check!
   return `
 DANGER DIRECTIVE IS AUTHORITATIVE. Resolve the player's chosen response to the established threat now: ${directive.threat}. The local engine has already fixed the check and refresh cannot reroll it: skill="${check.skill}", dc=${check.dc}, roll=${check.roll}, modifier=${check.modifier}, total=${check.total}, outcome=${check.outcome}. Narrate exactly that outcome and its immediate aftermath; never replace the roll, soften a failure into success, or invent a second check. Emit [skill_check: skill="${check.skill}" dc="${check.dc}" rolls="${check.roll}" modifier="${check.modifier}" total="${check.total}" result="${check.outcome}"] and this exact encounter tag: ${tag}. End at the next decision after the consequence. ${combat}`
+}
+
+/** Authoritative, executable replies for the rare case where every generated
+ * danger reply is rejected. They come from the cartridge's configured danger
+ * methods, not from generic location/objective recovery copy. */
+export function dangerDirectiveChoices(directive: DangerDirective, scene: number): StorySave['choices'] {
+  return [...new Set(directive.methods.map((method) => method.trim()).filter(Boolean))]
+    .slice(0, 5)
+    .map((label, index) => ({ id: `danger-${scene}-${index}`, label }))
 }
 
 function hasMeaningfulCost(before: StorySave, after: StorySave, cartridge: StoryCartridge): boolean {
@@ -204,7 +215,7 @@ export function settleDangerTurn(
   if (encounter?.type === 'encounter') {
     const severity = clamp(Math.floor(encounter.severity ?? 2), 1, 5)
     if (encounter.phase === 'warning' || encounter.phase === 'confrontation') {
-      after.danger = { ...state, phase: encounter.phase, safeTurns: 0, severity, currentThreat: encounter.kind ?? state.currentThreat ?? selectThreat(cartridge, state.cycle) }
+      after.danger = { ...state, phase: encounter.phase, safeTurns: 0, severity, currentThreat: encounter.kind ?? state.currentThreat ?? selectThreat(after, cartridge, state.cycle) }
       return effects
     }
     after.danger = {

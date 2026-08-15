@@ -146,7 +146,7 @@ function ConversationHeader({ cartridge, engine, audio, openWorld, textSize, set
     <div className="st-chat-header__top">
       <div className="st-chat-header__identity">
         <div><span>{cartridge.copy.title}</span><i className={engine.mode !== 'demo' ? 'is-live' : ''} /><img src={alteruMark} alt="" /></div>
-        <small>{engine.save.location} · {engine.save.time}</small>
+        <small>{engine.save.sceneLocation ?? engine.save.location} · {engine.save.time}</small>
       </div>
       <div className="st-chat-header__actions">
         <TextSizeControl locale={cartridge.locale} value={textSize} onChange={setTextSize} />
@@ -209,7 +209,7 @@ function ConversationFeed({ cartridge, engine, feedRef, endRef, onScroll, player
   feedRef: React.RefObject<HTMLDivElement>; endRef: React.RefObject<HTMLDivElement>; onScroll: () => void; player: PlayerProfile
 }) {
   return <div className="st-conversation" ref={feedRef} onScroll={onScroll}>
-    <div className="st-conversation__day"><span>{engine.save.location}</span><small>{engine.save.objective}</small></div>
+    <div className="st-conversation__day"><span>{engine.save.sceneLocation ?? engine.save.location}</span><small>{engine.save.objective}</small></div>
     {engine.save.blocks.map((block) => <StoryBlockView block={block} cartridge={cartridge} retryImage={engine.retryImage} player={player} characters={engine.save.characters} key={block.id} />)}
     {engine.pendingAction && <div className="st-message st-message--player is-pending" data-pending-action><div className="st-message__body"><small>{t(cartridge.locale, 'yourAction')}</small><p>{engine.pendingAction}</p></div><PlayerAvatar profile={player} locale={cartridge.locale} /></div>}
     {engine.progress && <div className="st-typing"><span><i /><i /><i /></span><p>{engine.progress.label}</p></div>}
@@ -346,7 +346,7 @@ function PlayerDetail({ player, save, cartridge, focusedStatId, openSection }: {
     {focusedStatId && statusSection}
     <DetailSection label={t(cartridge.locale, 'currentObjective')}><p>{save.objective}</p></DetailSection>
     <DetailSection label={t(cartridge.locale, 'journeyOverview')}><DetailMetrics rows={[
-      { label: t(cartridge.locale, 'here'), value: save.location },
+      { label: t(cartridge.locale, 'here'), value: save.sceneLocation ?? save.location },
       { label: t(cartridge.locale, 'system'), value: save.time },
       { label: t(cartridge.locale, 'placesDiscovered'), value: `${discoveredPlaces} / ${save.map.length}` },
       { label: t(cartridge.locale, 'peopleMet'), value: save.characters.length },
@@ -415,7 +415,7 @@ function SystemDetail({ cartridge, engine, restart }: {
   const [confirming, setConfirming] = useState(false)
   return <div className="st-world-detail">
     <DetailSection label={t(cartridge.locale, 'system')}><p>{t(cartridge.locale, 'segmentSaved', { n: engine.save.scene + 1 })}</p></DetailSection>
-    <DetailMetrics rows={[{ label: t(cartridge.locale, 'here'), value: engine.save.location }, { label: t(cartridge.locale, 'system'), value: engine.save.time }]} />
+    <DetailMetrics rows={[{ label: t(cartridge.locale, 'here'), value: engine.save.sceneLocation ?? engine.save.location }, { label: t(cartridge.locale, 'system'), value: engine.save.time }]} />
     <section className="st-world-restart">
       <small>{t(cartridge.locale, 'startOver')}</small>
       <p>{t(cartridge.locale, 'startOverDescription')}</p>
@@ -474,7 +474,7 @@ function WorldDrawer({ active, setActive, detail, setDetail, cartridge, engine, 
     {character && <CharacterDetail character={character} relationships={save.relationships} cartridge={cartridge} />}
     {mapNode && <MapDetail node={mapNode} map={save.map} cartridge={cartridge} />}
     {item && <ItemDetail item={item} cartridge={cartridge} />}
-    {detail?.type === 'objective' && <div className="st-world-detail"><DetailSection label={t(cartridge.locale, 'currentObjective')}><p>{save.objective}</p></DetailSection><DetailSection label={t(cartridge.locale, 'currentStatus')}><DetailMetrics rows={[{ label: t(cartridge.locale, 'here'), value: save.location }, { label: t(cartridge.locale, 'system'), value: save.time }]} /></DetailSection></div>}
+    {detail?.type === 'objective' && <div className="st-world-detail"><DetailSection label={t(cartridge.locale, 'currentObjective')}><p>{save.objective}</p></DetailSection><DetailSection label={t(cartridge.locale, 'currentStatus')}><DetailMetrics rows={[{ label: t(cartridge.locale, 'here'), value: save.sceneLocation ?? save.location }, { label: t(cartridge.locale, 'system'), value: save.time }]} /></DetailSection></div>}
     {relationship && <div className="st-world-detail"><DetailSection label={t(cartridge.locale, 'journalDetail')}><p>{relationship.actor} · {relationshipEventLabel(relationship.axis, cartridge.locale)}</p></DetailSection><DetailMetrics rows={[{ label: t(cartridge.locale, 'currentStatus'), value: t(cartridge.locale, relationship.delta > 0 ? 'warmer' : 'colder') }, { label: t(cartridge.locale, 'yourAction'), value: relationship.source }]} /></div>}
     {detail?.type === 'system' && <SystemDetail cartridge={cartridge} engine={engine} restart={() => { close(); engine.restartWorld() }} />}
   </section></div>

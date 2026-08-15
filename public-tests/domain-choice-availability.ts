@@ -13,7 +13,16 @@ function act(save: StorySave, action: string): StorySave {
 }
 
 let save = createInitialSave(wanderlight)
-for (let index = 0; index < 7; index += 1) save = act(save, '找一份短工')
+const ambiguousSpend = resolveDomainAction(save, wanderlight, '把钱全部花完')
+assert.equal(ambiguousSpend?.ruleId, 'clarify-spending-target')
+const afterAmbiguousSpend = act(save, '把钱全部花完')
+assert.equal(afterAmbiguousSpend.stats.coin, save.stats.coin, '未说明购买对象时余额必须保持不变')
+assert.equal(afterAmbiguousSpend.blocks.filter((block) => block.text === ambiguousSpend?.successText).length, 1, '本地领域结果只显示一次')
+assert.equal(afterAmbiguousSpend.choices.every((choice) => resolveDomainAction(afterAmbiguousSpend, wanderlight, choice.label)?.status === 'accepted'), true, '澄清回合只显示当前可执行的具体行动')
+assert.equal(resolveDomainAction(save, wanderlight, '把钱全部花完买一顿热饭')?.ruleId, 'hot-meal', '带具体对象的消费不能被精确澄清规则截获')
+save = act(save, '找一份短工')
+assert.equal(save.objective, '房钱已经足够；决定今晚住下、继续工作，还是搭月线离开。', '收入达到房费后旧目标必须立即推进')
+for (let index = 1; index < 7; index += 1) save = act(save, '找一份短工')
 assert.equal(save.stats.energy, 2)
 assert.equal(save.choices.some((choice) => choice.label === '找一份短工'), false, 'an unaffordable shift is filtered before display')
 assert.ok(save.choices.some((choice) => choice.label === '吃一顿热饭'), 'a feasible recovery remains visible')

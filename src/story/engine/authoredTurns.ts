@@ -5,13 +5,15 @@ function normalized(value: string): string {
 }
 
 export function resolveDeterministicOpeningTurn(
-  save: Pick<StorySave, 'scene' | 'choices'>,
+  save: Pick<StorySave, 'scene' | 'choices' | 'location'>,
   cartridge: StoryCartridge,
   action: string,
 ): DemoTurn | undefined {
-  if (save.scene !== 0 || !cartridge.opening.deterministicTurns) return undefined
-  const selected = save.choices.find((choice) => choice.label === action)
-  return selected ? cartridge.opening.deterministicTurns[selected.id] : undefined
+  if (!cartridge.opening.deterministicTurns || normalized(save.location) !== normalized(cartridge.opening.location)) return undefined
+  const selected = save.choices.find((choice) => normalized(choice.label) === normalized(action))
+  if (!selected) return undefined
+  const openingChoice = cartridge.opening.choices.find((choice) => normalized(choice.label) === normalized(selected.label))
+  return openingChoice ? cartridge.opening.deterministicTurns[openingChoice.id] : undefined
 }
 
 export function resolveDeterministicChoiceTurn(

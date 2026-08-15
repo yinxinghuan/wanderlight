@@ -8,8 +8,9 @@ import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
 import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
-import { canonicalizePaymentMetadata, repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, validatePaymentConsistency } from './engine/paymentConsistency'
-import { canCommitDisplayedChoiceWithoutGeneratedReplies, canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
+import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment } from './engine/paymentConsistency'
+import { canCommitDisplayedChoiceWithoutGeneratedReplies, repairKnownForestSceneDivergence } from './engine/turnConsistency'
+import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
 import { activeStatFloorRule, domainOwnsDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
@@ -105,7 +106,7 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
         : repaired.imageStatus === 'generating'
           ? 'queued'
           : repaired.imageStatus || (repaired.entered && prompt ? 'queued' : 'idle')
-      blocks = [...blocks, createImageBlock(`image-${repaired.scene}`, repaired.location, prompt, status, repaired.imageUrl)]
+      blocks = [...blocks, createImageBlock(`image-${repaired.scene}`, repaired.sceneLocation ?? repaired.location, prompt, status, repaired.imageUrl)]
     }
   }
   const initialItems = new Map(cartridge.initialInventory.map((item) => [item.id, item]))
@@ -130,6 +131,7 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
   const characterState = normalizeCharacterState(repaired, cartridge)
   let normalized = {
     ...repaired, ...characterState, version: 10, locale: repaired.locale ?? cartridge.locale,
+    sceneLocation: repaired.sceneLocation ?? repaired.location,
     decisionContext: repaired.version === 9 || repaired.version === 10 ? repaired.decisionContext ?? '' : '',
     remoteChatId: incomingChatId || repaired.remoteChatId, blocks, inventory, map,
     danger: normalizeDangerState(repaired.danger), jobs: (repaired.jobs ?? []).map((job) => ({ ...job })),
@@ -329,30 +331,40 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
         : await adapter.send(normalizedAction, { cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective }, setProgress)
       let parsed = parseStoryProtocol(result.content, actionLocale)
       if (!domainResolution) {
-        parsed = canonicalizePaymentMetadata(base, parsed, activeCartridge, normalizedAction)
-        let canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction, Boolean(authoredTurn))
-        parsed = canonical.parsed
-        if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
-        const turnViolations = mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)
-        const violations = [...validatePaymentConsistency(base, parsed, activeCartridge, normalizedAction), ...turnViolations]
+        let prepared = prepareTurnCandidate({
+          save: base, parsed, cartridge: activeCartridge, action: normalizedAction,
+          imagePrompt: result.imagePrompt, trustedAuthored: Boolean(authoredTurn), skipTurnValidation: mode === 'demo',
+        })
+        parsed = prepared.parsed
+        if (prepared.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
+        const violations = prepared.violations
         if (violations.length) {
           setProgress({ label: t(actionLocale, 'checkingState'), percent: 82 })
           if (authoredTurn) throw new Error(`invalid deterministic turn: ${violations.join(', ')}`)
+          if (prepared.canCommitWithoutReplies) {
+            commit((current) => applyParsedScene(
+              localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
+              result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId,
+            ))
+            setPendingAction('')
+            setProgress(null)
+            return
+          }
           result = await adapter.send(normalizedAction, {
             cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective,
             repair: { draft: result.content, violations },
           }, setProgress)
           parsed = parseStoryProtocol(result.content, actionLocale)
-          parsed = canonicalizePaymentMetadata(base, parsed, activeCartridge, normalizedAction)
-          canonical = canonicalizeTurnMetadata(base, parsed, activeCartridge, result.imagePrompt, normalizedAction)
-          parsed = canonical.parsed
-          if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
-          const remaining = [
-            ...validatePaymentConsistency(base, parsed, activeCartridge, normalizedAction),
-            ...(mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)),
-          ]
+          prepared = prepareTurnCandidate({
+            save: base, parsed, cartridge: activeCartridge, action: normalizedAction,
+            imagePrompt: result.imagePrompt, skipTurnValidation: mode === 'demo',
+          })
+          parsed = prepared.parsed
+          if (prepared.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
+          const remaining = prepared.violations
           if (remaining.length) {
-            if (canCommitDisplayedChoiceWithoutGeneratedReplies(base, activeCartridge, normalizedAction, remaining)) {
+            if (prepared.canCommitWithoutReplies
+              || canCommitDisplayedChoiceWithoutGeneratedReplies(base, activeCartridge, normalizedAction, remaining)) {
               commit((current) => applyParsedScene(
                 localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
                 result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId,

@@ -38,8 +38,11 @@ export function actionAuthorizesCoinSpend(action: string, locale: StoryCartridge
   if (locale === 'zh') {
     const denied = /(?:不|不要|别|暂不|先不|尚未|没有|拒绝)[^。！？]{0,8}(?:支付|付款|付钱|付房费|花钱|购买|买下|买票|订房|预订|租房|结账)/
     if (denied.test(source)) return false
-    const direct = /(?:支付|付款|付钱|付房费|花(?:掉|费|完)?(?:钱|这|那|一|\d|[零〇一二两三四五六七八九十百])|购买|买下|买票|订房|预订房间|租(?:一间|个)?房|住一晚|要一间房|结账|买一顿饭)/
+    const direct = /(?:支付|付款|付钱|付房费|花(?:掉|费|完)?(?:钱|这|那|一|\d|[零〇一二两三四五六七八九十百])|(?:把|将)[^。！？]{0,12}钱(?:币)?花|购买|买下|买票|订房|预订房间|租(?:一间|个)?房|住一晚|要一间房|结账|买一顿饭)/
     if (!direct.test(source)) return false
+    const genericSpend = /(?:把|将)?(?:身上|手里|剩下|剩余|所有|全部|这些|这点)?(?:的)?钱(?:币)?(?:(?:全|都)部|都)?花(?:掉|完)|花(?:掉|完)(?:身上|手里|剩下|剩余|所有|全部|这些|这点)?(?:的)?钱(?:币)?/
+    const purchaseObject = /(?:房费|房间|住宿|旅店|车票|船票|票价|饭|餐|食物|饮料|药|装备|工具|物品|礼物|捐款|小费|账单)|(?:购买|买下|买票|订房|预订|租房|结账)/
+    if (genericSpend.test(source) && !purchaseObject.test(source)) return false
     const exploratory = /(?:询问|问问|了解|打听|查看|看看|考虑|寻找|比较)[^。！？]{0,20}(?:房费|价格|费用|住宿|交通|车票|饭)/
     const explicitAfterExploration = /(?:并|然后|随后|确认后)[^。！？]{0,10}(?:支付|付款|付钱|买下|购买|订房|买票|结账)/
     return !exploratory.test(source) || explicitAfterExploration.test(source)
@@ -48,6 +51,9 @@ export function actionAuthorizesCoinSpend(action: string, locale: StoryCartridge
   if (denied.test(source)) return false
   const direct = /\b(?:pay|spend|buy|purchase|book|reserve|rent|check out|stay (?:for )?the night)\b/i
   if (!direct.test(source)) return false
+  const genericSpend = /\bspend\b.{0,24}\b(?:all|every|remaining|rest of)?\s*(?:my|the)?\s*(?:money|coins?)\b/i
+  const purchaseObject = /\b(?:on|for|buy|purchase|book|reserve|rent|room|lodging|hotel|ticket|fare|meal|food|drink|medicine|gear|tool|gift|donation|tip|bill)\b/i
+  if (genericSpend.test(source) && !purchaseObject.test(source.replace(/\bspend\b/i, ''))) return false
   const exploratory = /\b(?:ask|inquire|learn|check|consider|look for|compare)\b.{0,32}\b(?:price|cost|fare|room|lodging|transport|ticket|meal)\b/i
   const explicitAfterExploration = /\b(?:and|then|after confirming)\b.{0,16}\b(?:pay|buy|purchase|book|reserve|rent)\b/i
   return !exploratory.test(source) || explicitAfterExploration.test(source)
@@ -94,10 +100,10 @@ export function canonicalizePaymentMetadata(
   const currency = /(?:钱币|铜板|铜币|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
   const received = cartridge.locale === 'zh'
     ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|(?:放进|放到|放入)你手里|当场付了|当场结清|已经结清|收到了?)/
-    : /(?:paid you|pays you|handed you|hands you|gave you|passed you|counted out|you received|places?.{0,32}(?:coins?|coppers?|crowns?|tokens?).{0,16}(?:in|into) your hand|payment (?:was|is) settled)/i
+    : /(?:paid you|pays you|handed you|hands you|gave you|passed you|counts? out|counted out|you received|places?.{0,32}(?:coins?|coppers?|crowns?|tokens?).{0,16}(?:in|into) your hand|payment (?:was|is) settled)/i
   const spent = cartridge.locale === 'zh'
-    ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|你(?:用|拿出|掏出|交出)[^。！？]{0,20}(?:支付|付了|交了|付清|结清)|从你[^。！？]{0,16}扣除)/
-    : /(?:you paid|you (?:used|took out|handed over).{0,24}(?:to pay|as payment)|was deducted from you)/i
+    ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|你(?:用|拿出|掏出|交出)[^。！？]{0,28}(?:支付|付了|交了|付清|结清|全部花掉|全部花完|投入)|你[^。！？]{0,24}钱(?:币)?(?:(?:全|都)部|都)(?:花掉|花完|用光)|从你[^。！？]{0,16}扣除)/
+    : /(?:you paid|you (?:used|took out|handed over).{0,32}(?:to pay|as payment|spent it all)|you spent.{0,32}(?:coins?|money)|was deducted from you)/i
   const promise = cartridge.locale === 'zh'
     ? /(?:如果|等你?|(?:完成|做完|搬完|送完|修完)[^。！？]{0,12}(?:(?:之后|以后)|后(?=[，,\s我你她他会将再])|再)|再?帮(?:我|忙)?)[^。！？]{0,48}(?:会|将|给你|付你|报酬|工钱)/
     : /(?:(?:if|when|after).{0,64}(?:will pay|pay you|wage|payment)|help.{0,64}(?:i(?:'ll| will) pay|pay you))/i
@@ -162,10 +168,10 @@ export function validatePaymentConsistency(save: StorySave, parsed: ParsedScene,
   const currency = /(?:钱币|铜板|铜币|硬币|金币|银币|coins?|coppers?|crowns?|tokens?)/i
   const received = cartridge.locale === 'zh'
     ? /(?:递给你|交给你|付给你|支付给你|给了你|数给你|塞给你|(?:放进|放到|放入)你手里|当场付了|当场结清|已经结清|收到了?)/
-    : /(?:paid you|pays you|handed you|hands you|gave you|passed you|counted out|you received|places?.{0,32}(?:coins?|coppers?|crowns?|tokens?).{0,16}(?:in|into) your hand|payment (?:was|is) settled)/i
+    : /(?:paid you|pays you|handed you|hands you|gave you|passed you|counts? out|counted out|you received|places?.{0,32}(?:coins?|coppers?|crowns?|tokens?).{0,16}(?:in|into) your hand|payment (?:was|is) settled)/i
   const spent = cartridge.locale === 'zh'
-    ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|你(?:用|拿出|掏出|交出)[^。！？]{0,20}(?:支付|付了|交了|付清|结清)|从你[^。！？]{0,16}扣除)/
-    : /(?:you paid|you (?:used|took out|handed over).{0,24}(?:to pay|as payment)|was deducted from you)/i
+    ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|你(?:用|拿出|掏出|交出)[^。！？]{0,28}(?:支付|付了|交了|付清|结清|全部花掉|全部花完|投入)|你[^。！？]{0,24}钱(?:币)?(?:(?:全|都)部|都)(?:花掉|花完|用光)|从你[^。！？]{0,16}扣除)/
+    : /(?:you paid|you (?:used|took out|handed over).{0,32}(?:to pay|as payment|spent it all)|you spent.{0,32}(?:coins?|money)|was deducted from you)/i
   const promise = cartridge.locale === 'zh'
     ? /(?:如果|等你?|(?:完成|做完|搬完|送完|修完)[^。！？]{0,12}(?:(?:之后|以后)|后(?=[，,\s我你她他会将再])|再)|再?帮(?:我|忙)?)[^。！？]{0,48}(?:会|将|给你|付你|报酬|工钱)/
     : /(?:(?:if|when|after).{0,64}(?:will pay|pay you|wage|payment)|help.{0,64}(?:i(?:'ll| will) pay|pay you))/i

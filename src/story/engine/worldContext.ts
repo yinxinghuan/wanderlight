@@ -48,6 +48,7 @@ export function buildWorldContext(context: AdapterContext) {
     current: {
       scene: save.scene,
       location: save.location,
+      sceneLocation: save.sceneLocation ?? save.location,
       time: save.time,
       objective: save.objective,
       stats: cartridge.statDefinitions.map((definition) => ({

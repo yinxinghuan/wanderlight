@@ -3,7 +3,7 @@ import { decodeChoiceRecord, encodeChoiceRecord } from '../src/story/engine/choi
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
-import { canCommitDisplayedChoiceWithoutGeneratedReplies, canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
+import { canCommitDisplayedChoiceWithoutGeneratedReplies, canCommitGeneratedTurnWithoutReplies, canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
 import { canonicalizePaymentMetadata, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
 import { resolveDeterministicOpeningTurn } from '../src/story/engine/authoredTurns'
 import { t } from '../src/story/i18n'
@@ -46,6 +46,12 @@ ok(validateTurnConsistency(initial, explicitNewTask, cartridge).includes('turn.n
 const canonicalTask = canonicalizeTurnMetadata(initial, explicitNewTask, cartridge, undefined, '答应帮莉莎搬运货物')
 equal(validateTurnConsistency(initial, canonicalTask.parsed, cartridge).length, 0, 'a visible accepted task receives a local objective command')
 ok(canonicalTask.parsed.commands.some((command) => command.type === 'state' && /搬运货物/.test(command.value)), 'the inferred objective comes from visible task prose')
+const candidateObjectiveChoice = canonicalizeTurnMetadata(initial, parseStoryProtocol(`你接受的新任务是守望月桥。
+[scene_location: location="${initial.location}"]
+[state: value="守望月桥"]
+[choices: "查看守望月桥"]`, 'zh'), cartridge)
+const candidateObjectiveChoices = candidateObjectiveChoice.parsed.commands.find((command) => command.type === 'choices')
+ok(candidateObjectiveChoices?.type === 'choices' && candidateObjectiveChoices.choices.length === 1, 'choice grounding uses the same-turn candidate objective')
 
 const missingMetadata = parseStoryProtocol(`莉莎检查了箱子的绑带，指向左侧空地，并说明稍后会告诉你摆放顺序。
 [choices: "从左侧开始搬运"|"检查箱子的绑带"|"询问莉莎摆放顺序"]`, 'zh')
@@ -211,7 +217,7 @@ ok(!semanticChoices.choices.some((choice) => choice.includes('霜港') || choice
 const sublocation = canonicalizeTurnMetadata(semanticSave, parseStoryProtocol(`你和罗温走进远灯研修院工坊，仍在研修院范围内。
 [scene_location: location="远灯研修院工坊"]
 [choices: "留在远灯研修院等待"]`, 'zh'), cartridge)
-ok(sublocation.parsed.commands.some((command) => command.type === 'scene_location' && command.location === '远灯研修院'), 'a named sublocation remains attached to its current authoritative map node')
+ok(sublocation.parsed.commands.some((command) => command.type === 'scene_location' && command.location === '远灯研修院工坊'), 'a named sublocation remains distinct from its authoritative map node')
 equal(validateTurnConsistency(semanticSave, sublocation.parsed, cartridge).length, 0, 'a current-node sublocation cannot create a false teleport recovery')
 
 const locallyExecutable = parseStoryProtocol(`灯湾码头的公开设施仍在运转。
@@ -228,6 +234,37 @@ const omittedMapUpdate = parseStoryProtocol(`你穿过雨棚，走进杯影夜�
 const canonicalArrival = canonicalizeTurnMetadata(initial, omittedMapUpdate, cartridge)
 ok(canonicalArrival.parsed.commands.some((command) => command.type === 'map_update' && command.location === '杯影夜市'), 'visible arrival at a known place synthesizes the omitted map update')
 equal(validateTurnConsistency(initial, canonicalArrival.parsed, cartridge).length, 0, 'known visible arrival commits without blaming the player for missing model metadata')
+
+const openingDetour = canonicalizeTurnMetadata(initial, parseStoryProtocol(`你快步走进码头边上的旅店大堂，柜台后的招待告诉你：“单人间十枚钱币，含简单早餐。”你只了解情况，没有付款。你仍能回到月台、夜市或那位追种荚的短发女人身边。
+[scene_location: location="灯湾码头"]
+[choices: "去月台找乘务员问招工详情"|"去雨棚夜市帮忙搬箱子"|"跟那位追种荚的短发女人搭话"]`, 'zh'), cartridge)
+const openingDetourChoices = openingDetour.parsed.commands.find((command) => command.type === 'choices')
+ok(openingDetourChoices?.type === 'choices', 'a free-input detour keeps its choice command')
+equal(openingDetourChoices.choices.length, 3, 'recent authoritative opening facts ground semantically continuous choices')
+equal(validateTurnConsistency(initial, openingDetour.parsed, cartridge).length, 0, 'a valid free-input detour cannot be forced into consistency recovery')
+
+const duplicatedSublocationDraft = `你走进灯湾码头旁的旅店，只问清十枚钱币的房价，没有付款。
+[scene_location: location="灯湾码头旅店"]
+[choices: "回到码头招工牌处了解工作"]`
+const duplicatedSublocation = canonicalizeTurnMetadata(initial, parseStoryProtocol(`${duplicatedSublocationDraft}\n${duplicatedSublocationDraft}`, 'zh'), cartridge)
+equal(duplicatedSublocation.parsed.commands.filter((command) => command.type === 'scene_location').length, 1, 'duplicated equivalent sublocation metadata is deduplicated')
+equal(validateTurnConsistency(initial, duplicatedSublocation.parsed, cartridge).length, 0, 'a duplicated current-node sublocation cannot create a false recovery')
+const committedSublocation = applyParsedScene(initial, duplicatedSublocation.parsed, cartridge, '只问清房价，不付款')
+equal(committedSublocation.location, '灯湾码头', 'a sublocation cannot replace the authoritative map node')
+equal(committedSublocation.sceneLocation, '灯湾码头旅店', 'the exact current scene is persisted independently')
+const mismatchedSublocationImage = canonicalizeTurnMetadata(initial, parseStoryProtocol(`你仍在灯湾码头旅店柜台前。
+[scene_location: location="灯湾码头旅店"]
+[image_location: location="灯湾码头"]
+[choices: "回到码头招工牌处了解工作"]`, 'zh'), cartridge, 'hotel counter image')
+ok(validateTurnConsistency(initial, mismatchedSublocationImage.parsed, cartridge, mismatchedSublocationImage.imagePrompt).includes('image.location_must_match_scene'), 'an image bound only to the parent map node cannot depict a different sublocation')
+
+ok(canCommitGeneratedTurnWithoutReplies(['turn.requires_actionable_choices']), 'valid generated prose may commit when only its next replies were filtered out')
+ok(!canCommitGeneratedTurnWithoutReplies(['payment.purchase_requires_player_authorization']), 'a payment violation can never use the replyless commit path')
+const replylessParsed = canonicalizeTurnMetadata(initial, parseStoryProtocol(`你走进灯湾码头旁的旅店，只问清十枚钱币的房价，没有付款。
+[scene_location: location="灯湾码头"]`, 'zh'), cartridge).parsed
+const replyless = applyParsedScene(initial, replylessParsed, cartridge, '只问清房价，不付款')
+ok(replyless.choices.length >= 1, 'a replyless local detour retains prior grounded actions instead of entering a synthetic recovery')
+ok(!replyless.blocks.some((block) => block.id.startsWith('consistency-recovery-')), 'replyless commit never writes a consistency-recovery story block')
 
 for (const openingCartridge of [listCartridges('zh')[0], listCartridges('en')[0]]) {
   const openingSave = createInitialSave(openingCartridge)
