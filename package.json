@@ -23,6 +23,7 @@
     "test:audio": "node --import tsx public-tests/audio-synth.ts",
     "test:stat-floor": "node --import tsx public-tests/stat-floor.ts",
     "test:rest-recovery": "node --import tsx public-tests/rest-recovery.ts",
+    "test:generated-characters": "node --import tsx public-tests/generated-character-persistence.ts",
     "test:danger": "node --import tsx public-tests/danger-director.ts"
   },
   "dependencies": {

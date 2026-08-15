@@ -1,6 +1,7 @@
 import { encodeChoiceRecord } from './choiceInput'
 import { filterGroundedChoices } from './continuity'
 import { resolveDomainAction } from './domainRules'
+import { validateCharacterContinuity } from './characterContinuity'
 import type { Choice, MapNode, ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
 
 function clean(value: string): string {
@@ -403,6 +404,8 @@ export function validateTurnConsistency(
   const mapUpdates = parsed.commands.filter((command) => command.type === 'map_update')
   const choices = validChoices(parsed)
   const prose = visibleProse(parsed)
+
+  validateCharacterContinuity(save, parsed, cartridge).forEach((violation) => violations.add(violation))
 
   if (sceneLocations.length !== 1) violations.add('turn.requires_one_scene_location')
   else if (!sceneBelongsToMapLocation(

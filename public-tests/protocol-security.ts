@@ -22,7 +22,8 @@ equal(next.inventory.find((item) => item.label === 'Flooded tokens')?.count, 99,
 ok(!next.characters.some((character) => character.id.includes('/') || character.id.includes('<')), 'invalid character id must not persist')
 ok(next.blocks.some((block) => block.text.includes('<img src=x onerror=alert(1)>')), 'HTML-like prose should remain inert React text')
 
-const joined = applyParsedScene(next, parseStoryProtocol(`Mira Voss joins you after a visible agreement.
+const joined = applyParsedScene(next, parseStoryProtocol(`An adult botanist in a sage work jacket secures a seed case beside the rail. The shipping tag reads “Mira Voss.” Mira offers to travel with you to inspect the next field together.
+[character_update: character_id="mira-voss" character="Mira Voss" role="Age 28 · field botanist"]
 [party_change: character_id="mira-voss" character="Mira Voss" change="add"]
 [choices: "Travel together"|"Talk first"|"Review the route"]`, 'en'), cartridge, 'Travel with Mira')
 const silentRemoval = applyParsedScene(joined, parseStoryProtocol(`[party_change: character_id="mira-voss" character="Mira Voss" change="remove"]

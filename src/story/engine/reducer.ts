@@ -7,6 +7,7 @@ import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, d
 import { encodeChoiceRecord } from './choiceInput'
 import { resolveDeterministicChoiceTurn } from './authoredTurns'
 import { bindChoiceDestinations, inferActionDestination, mergeRouteHints, playerDeclaredLocationAlias, stableDynamicLocationId, validatedDynamicRouteHints } from './turnConsistency'
+import { characterIdentityConflict, hasVisibleCharacterDebut, hasVisiblePartyJoin, matchingCharacter, normalizedCharacterName } from './characterContinuity'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -67,16 +68,10 @@ function visualIdentityFromCommand(command: CharacterCommand, source: CharacterV
   }
 }
 
-function normalizedName(value: string): string {
-  return value.trim().toLocaleLowerCase().replace(/[\s·•._-]+/g, '')
-}
-
-function resolveCharacter(save: StorySave, command: CharacterCommand, index: number, cartridge: StoryCartridge): StoryCharacter {
-  const byId = command.characterId ? save.characters.find((character) => character.id === command.characterId) : undefined
-  const byName = save.characters.find((character) => normalizedName(character.name) === normalizedName(command.character))
-  const existing = byId ?? byName
+function resolveCharacter(save: StorySave, command: CharacterCommand, index: number, cartridge: StoryCartridge): StoryCharacter | undefined {
+  if (characterIdentityConflict(save, command, cartridge)) return undefined
+  const existing = matchingCharacter(save, command)
   if (existing) {
-    if (byId) existing.name = command.character
     existing.role = command.role ?? existing.role
     existing.detail = command.detail ?? existing.detail
     existing.lore = command.lore ?? existing.lore
@@ -89,9 +84,11 @@ function resolveCharacter(save: StorySave, command: CharacterCommand, index: num
     return existing
   }
   const definition = command.characterId ? cartridge.characters.find((character) => character.id === command.characterId) : undefined
+  if (!command.characterId) return undefined
+  if (!definition && (command.type !== 'character_update' || !command.visualAppearance?.trim() || !command.visualTraits?.length)) return undefined
   const created: StoryCharacter = {
     ...definition,
-    id: command.characterId ?? `npc-${save.scene}-${index}`,
+    id: command.characterId,
     name: command.character || definition?.name || command.characterId || `NPC ${index + 1}`,
     role: command.role ?? definition?.role ?? t(cartridge.locale, command.type === 'party_change' && command.change === 'add' ? 'companion' : 'knownPerson'),
     vitality: clamp(command.vitality ?? definition?.vitality ?? 100, 0, 100),
@@ -145,7 +142,7 @@ export function normalizeCharacterState(candidate: LegacyCharacterState, cartrid
   })
   const findOrCreate = (name: string, id?: string): StoryCharacter => {
     const found = (id ? characters.find((character) => character.id === id) : undefined)
-      ?? characters.find((character) => normalizedName(character.name) === normalizedName(name))
+      ?? characters.find((character) => normalizedCharacterName(character.name) === normalizedCharacterName(name))
     if (found) return found
     const created: StoryCharacter = {
       id: id && !characters.some((character) => character.id === id) ? id : `legacy-npc-${characters.length + 1}`,
@@ -823,14 +820,22 @@ export function applyParsedScene(
     }
     if (command.type === 'reputation') {
       const delta = /betray|hostile|distrust|拒绝|背叛/i.test(command.action) ? -1 : 1
-      const character = resolveCharacter(next, { type: 'character_update', character: command.npc }, index, cartridge)
+      const character = next.characters.find((entry) => normalizedCharacterName(entry.name) === normalizedCharacterName(command.npc))
+      if (!character) return
       next.relationships.push({ id: effectId, actor: character.name, characterId: character.id, axis: command.action, delta, source: actionId })
       effects.push(changeBlock(effectId, `${command.npc} · ${delta > 0 ? t(cartridge.locale, 'warmer') : t(cartridge.locale, 'colder')}`, { delta, relationshipChange: command.action }))
     }
-    if (command.type === 'character_update') resolveCharacter(next, command, index, cartridge)
+    if (command.type === 'character_update') {
+      const existing = matchingCharacter(next, command)
+      if (characterIdentityConflict(next, command, cartridge)) return
+      if (!existing && !hasVisibleCharacterDebut(parsed, command.character, cartridge.locale)) return
+      resolveCharacter(next, command, index, cartridge)
+    }
     if (command.type === 'party_change') {
       const character = resolveCharacter(next, command, index, cartridge)
+      if (!character) return
       if (command.change === 'add') {
+        if (!hasVisiblePartyJoin(parsed, character.name, cartridge.locale)) return
         if (!next.partyMemberIds.includes(character.id)) next.partyMemberIds.push(character.id)
         character.status = 'companion'
         character.joinedAtScene ??= next.scene
