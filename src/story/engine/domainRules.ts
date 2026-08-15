@@ -54,6 +54,16 @@ function currentMapNodeId(save: StorySave): string | undefined {
   return save.map.find((node) => node.current)?.id
 }
 
+function currentWorldDay(save: StorySave): number {
+  const visible = save.time.match(/(?:第\s*(\d+)\s*天|Day\s*(\d+))/i)
+  return Math.max(1, Number(visible?.[1] ?? visible?.[2] ?? save.facts.world_day ?? 1))
+}
+
+function repeatFactId(save: StorySave, ruleId: string): string {
+  const place = currentMapNodeId(save) ?? normalized(save.location) ?? 'unknown-place'
+  return `domain-repeat:${ruleId}:${place}:day-${currentWorldDay(save)}`
+}
+
 export function activeStatFloorRule(save: StorySave, cartridge: StoryCartridge) {
   for (const definition of cartridge.statDefinitions) {
     const rule = definition.floorRule
@@ -130,8 +140,13 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
   }
   if (!candidate) return undefined
   const reasons = candidate.rule.requirements.filter((requirement) => !requirementMet(requirement, save)).map((requirement) => requirement.reason)
+  const repeatId = candidate.rule.repeatPolicy?.scope === 'location-day'
+    ? repeatFactId(save, candidate.rule.id)
+    : undefined
+  if (repeatId && save.facts[repeatId] === true) reasons.push(candidate.rule.repeatPolicy!.reason)
   const accepted = reasons.length === 0
   const effects = accepted ? candidate.rule.effects.map((effect) => ({ ...effect })) : []
+  if (accepted && repeatId) effects.push({ type: 'fact', id: repeatId, value: true })
   if (accepted && candidate.rule.dangerPolicy === 'withdraw' && save.danger.phase !== 'calm') {
     effects.push({ type: 'danger', outcome: 'costly-success' })
   }
@@ -218,18 +233,42 @@ export function syncDomainDerivedState(save: StorySave, cartridge: StoryCartridg
   return save
 }
 
+/** Upgrade a save whose latest committed action already completed a repeat-limited
+ * local transaction before repeat markers existed. This only inspects the latest
+ * action tail, so an old job from another scene or day cannot block new work. */
+export function repairDomainRepeatState(save: StorySave, cartridge: StoryCartridge): StorySave {
+  let latestAction = -1
+  save.blocks.forEach((block, index) => {
+    if (block.kind === 'event' && block.id.startsWith('action-')) latestAction = index
+  })
+  if (latestAction < 0) return save
+  const completed = new Set(save.blocks.slice(latestAction + 1)
+    .filter((block) => block.data?.domainStatus === 'accepted' && typeof block.data?.domainRule === 'string')
+    .map((block) => String(block.data?.domainRule)))
+  const rules = cartridge.domainRules?.rules.filter((rule) => rule.repeatPolicy?.scope === 'location-day' && completed.has(rule.id)) ?? []
+  if (!rules.length) return save
+  const facts = { ...save.facts }
+  rules.forEach((rule) => { facts[repeatFactId(save, rule.id)] = true })
+  return { ...save, facts }
+}
+
 export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge, resolution?: DomainActionResolution): StoryBlock[] {
   if (!resolution) return []
   save.choices = resolution.successChoices.map((label, index) => ({ id: `domain-${save.scene}-${index}`, label }))
   if (resolution.status === 'rejected') {
     return [{
       id: `domain-${save.scene}`,
-      kind: 'event',
+      kind: 'narration',
       text: resolution.reasons.join('；'),
       data: { domainRule: resolution.ruleId, domainStatus: 'rejected' },
     }]
   }
-  const blocks: StoryBlock[] = []
+  const blocks: StoryBlock[] = [{
+    id: `domain-${save.scene}`,
+    kind: 'narration',
+    text: resolution.successText,
+    data: { domainRule: resolution.ruleId, domainStatus: 'accepted' },
+  }]
   const statDeltas = new Map<string, number>()
   resolution.effects.forEach((effect) => {
     if (effect.type === 'stat') statDeltas.set(effect.id, (statDeltas.get(effect.id) ?? 0) + effect.delta)
@@ -301,8 +340,8 @@ export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge
       if (effect.reason) blocks.push({ id, kind: 'summary', text: effect.reason, data: { domainRule: resolution.ruleId } })
     }
   })
+  if (save.sessionEnded) save.choices = []
   syncDomainDerivedState(save, cartridge)
-  blocks.push({ id: `domain-${save.scene}`, kind: 'event', text: resolution.successText, data: { domainRule: resolution.ruleId, domainStatus: 'accepted' } })
   return blocks
 }
 

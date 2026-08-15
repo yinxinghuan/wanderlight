@@ -158,6 +158,7 @@ export interface DomainActionRule {
   matchMode?: 'contains' | 'exact'
   intentGuard?: 'rest-commitment'
   dangerPolicy?: 'advance' | 'suppress' | 'withdraw'
+  repeatPolicy?: { scope: 'location-day'; reason: string }
   requirements: DomainRequirement[]
   effects: DomainEffect[]
   successText: string

@@ -910,11 +910,13 @@ export function applyParsedScene(
         }],
       }
     : adjudicatedParsed
-  const image = chooseSceneImage(
-    save, next, imageParsed, cartridge, imagePrompt,
-    domainImageNode && !imageSubject ? 'environment' : imageSubject,
-    imageCharacterId,
-  )
+  const image = domainResolution?.status === 'rejected'
+    ? { prompt: '' }
+    : chooseSceneImage(
+        save, next, imageParsed, cartridge, imagePrompt,
+        domainImageNode && !imageSubject ? 'environment' : imageSubject,
+        imageCharacterId,
+      )
   next.blocks = [
     ...next.blocks,
     ...effects,

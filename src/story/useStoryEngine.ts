@@ -13,7 +13,7 @@ import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
-import { activeStatFloorRule, domainSuppressesDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
+import { activeStatFloorRule, domainSuppressesDanger, repairDomainRepeatState, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
 import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from './engine/authoredTurns'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
@@ -129,14 +129,14 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
     }
   }), repaired.sceneLocation ?? repaired.location, repaired.blocks, cartridge)
   const characterState = normalizeCharacterState(repaired, cartridge)
-  let normalized = {
+  let normalized = repairDomainRepeatState({
     ...repaired, ...characterState, version: 10, locale: repaired.locale ?? cartridge.locale,
     sceneLocation: repaired.sceneLocation ?? repaired.location,
     decisionContext: repaired.version === 9 || repaired.version === 10 ? repaired.decisionContext ?? '' : '',
     remoteChatId: incomingChatId || repaired.remoteChatId, blocks, inventory, map,
     danger: normalizeDangerState(repaired.danger), jobs: (repaired.jobs ?? []).map((job) => ({ ...job })),
     facts: { ...(cartridge.initialFacts ?? {}), ...(repaired.facts ?? {}) },
-  } as StorySave
+  } as StorySave, cartridge)
   normalized = restoreDeterministicRecoveryChoice(normalized, cartridge)
   if (!normalized.sessionEnded && normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
   const floor = activeStatFloorRule(normalized, cartridge)

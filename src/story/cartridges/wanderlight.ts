@@ -59,7 +59,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
   const zh = locale === 'zh'
   const s = (cn: string, en: string) => zh ? cn : en
   const localChoices = [
-    s('找一份短工', 'Look for a short job'),
+    s('接一份九十分钟短工（报酬 9 枚）', 'Take a ninety-minute shift (9 coin)'),
     s('吃一顿热饭', 'Get something to eat'),
     s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'),
     s('放弃当前行动，去最近的公共休息处', 'Abandon the current action and reach the nearest public rest area'),
@@ -101,7 +101,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         successText: s('你还没有说明想买什么，所以没有发生交易，余额保持不变。先选定具体的商品或服务，系统才会确认价格并扣款。', 'You have not said what you want to buy, so no transaction occurs and your balance stays unchanged. Choose a specific good or service before any price is confirmed or coin is deducted.'),
         successChoices: [
           s('买一顿热饭', 'Buy a hot meal'),
-          s('找一份短工', 'Look for a short job'),
+          s('接一份九十分钟短工（报酬 9 枚）', 'Take a ninety-minute shift (9 coin)'),
           s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'),
         ],
       },
@@ -140,10 +140,14 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'local-shift', intent: s('完成一份当地短工', 'complete a local shift'),
-        match: [s('找一份短工', 'look for a short job'), s('做短工', 'take a local shift'), s('继续干活', 'keep working'), s('帮忙干活', 'help with the work'), s('完成这份工作', 'finish the job'), s('干完这份活', 'complete the shift'), s('结清工钱', 'collect my pay'), s('领取报酬', 'receive the payment')],
+        match: [s('接一份九十分钟短工（报酬 9 枚）', 'take a ninety-minute shift (9 coin)'), s('找一份短工', 'look for a short job'), s('做短工', 'take a local shift'), s('继续干活', 'keep working'), s('帮忙干活', 'help with the work'), s('完成这份工作', 'finish the job'), s('干完这份活', 'complete the shift'), s('结清工钱', 'collect my pay'), s('领取报酬', 'receive the payment')],
+        repeatPolicy: {
+          scope: 'location-day',
+          reason: s('这个地点今天能立即结算的临时工作已经做完了。去新的地点查看工作，或休息到第二天再来。', 'You already completed the immediately available shift here today. Check another place for work, or return on a new day.'),
+        },
         requirements: [{ type: 'stat', id: 'energy', min: 12, reason: s('你太累了，手上的活已经开始出错。先吃点东西或休息。', 'You are too tired to work safely. Eat or rest first.') }],
         effects: [{ type: 'stat', id: 'energy', delta: -10 }, { type: 'stat', id: 'coin', delta: 9 }, { type: 'stat', id: 'renown', delta: 2 }, { type: 'clock-add', minutes: 90 }, { type: 'fact-add', id: 'jobs_completed', delta: 1 }],
-        successText: s('你接下一份九十分钟的短工。活不轻松，但工钱当场结清；附近的人也开始认得你。', 'You take a ninety-minute local shift. The work is tiring, but you are paid on the spot, and a few people now recognize you.'),
+        successText: s('你在附近的临时告示上接下一份九十分钟的装卸与整理工作。负责人先确认报酬是九枚钱币；你搬完最后一箱并核对清单后，对方把九枚钱币当场交给你。附近的人也开始认得你。', 'You take a ninety-minute loading and sorting shift from a nearby notice. The supervisor confirms the wage is 9 coin; after you move the final crate and check the list, they pay all 9 coin on the spot. A few people nearby begin to recognize you.'),
         successChoices: localChoices,
         rejectionChoices: localChoices,
       },
@@ -280,7 +284,7 @@ function make(locale: Locale): StoryCartridge {
   }
 
   const safeLocalChoices = [
-    s('找一份短工', 'Look for a short job'),
+    s('接一份九十分钟短工（报酬 9 枚）', 'Take a ninety-minute shift (9 coin)'),
     s('吃一顿热饭', 'Get something to eat'),
     s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'),
   ]

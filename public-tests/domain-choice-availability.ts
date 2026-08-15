@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
-import { wanderlight } from '../src/story/cartridges/wanderlight'
-import { resolveDomainAction } from '../src/story/engine/domainRules'
+import { wanderlight, wanderlightEn } from '../src/story/cartridges/wanderlight'
+import { repairDomainRepeatState, resolveDomainAction } from '../src/story/engine/domainRules'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyParsedScene, createInitialSave } from '../src/story/engine/reducer'
 import type { StorySave } from '../src/story/types'
@@ -22,17 +22,67 @@ assert.equal(afterAmbiguousSpend.choices.every((choice) => resolveDomainAction(a
 assert.equal(resolveDomainAction(save, wanderlight, '把钱全部花完买一顿热饭')?.ruleId, 'hot-meal', '带具体对象的消费不能被精确澄清规则截获')
 save = act(save, '找一份短工')
 assert.equal(save.objective, '房钱已经足够；决定今晚住下、继续工作，还是搭月线离开。', '收入达到房费后旧目标必须立即推进')
-for (let index = 1; index < 7; index += 1) save = act(save, '找一份短工')
-assert.equal(save.stats.energy, 2)
-assert.equal(save.choices.some((choice) => choice.label === '找一份短工'), false, 'an unaffordable shift is filtered before display')
+assert.equal(save.stats.energy, 62, '短工只扣除一次十点精力')
+assert.equal(save.stats.coin, 15, '短工只结算一次九枚钱币')
+assert.equal(save.stats.renown, 6, '短工只增加一次两点风闻')
+const latestAction = save.blocks.findIndex((block) => block.id === 'action-1')
+const actionTail = save.blocks.slice(latestAction + 1)
+assert.equal(actionTail[0]?.kind, 'narration', '本地行动的可见结果必须先于数值条出现')
+assert.match(actionTail[0]?.text ?? '', /九枚钱币/, '短工反馈必须说明具体工作和报酬')
+assert.equal(save.choices.some((choice) => /九十分钟短工|找一份短工/.test(choice.label)), false, '同地点同一天完成后不能再次显示同一即时短工')
+const repeated = resolveDomainAction(save, wanderlight, '找一份短工')
+assert.equal(repeated?.status, 'rejected', '强行重复提交同地点同一天的短工也必须被拒绝')
+assert.match(repeated?.reasons.join('') ?? '', /今天.*已经做完/, '重复提交必须给出具体原因')
+const beforeRepeat = { ...save.stats }
+const imagesBeforeRepeat = save.blocks.filter((block) => block.kind === 'image').length
+save = act(save, '找一份短工')
+assert.deepEqual(save.stats, beforeRepeat, '重复短工不能再次扣体力、发钱或增加风闻')
+assert.equal(save.blocks.filter((block) => block.kind === 'image').length, imagesBeforeRepeat, '被拒绝的重复行动不能生成一张没有新事件的场景图')
+assert.equal(save.blocks.find((block) => block.data?.domainStatus === 'rejected')?.kind, 'narration', '拒绝原因必须使用正文可读字号，而不是弱系统行')
 assert.ok(save.choices.some((choice) => choice.label === '吃一顿热饭'), 'a feasible recovery remains visible')
 assert.ok(save.choices.some((choice) => choice.label === '原地坐下，休息四十五分钟'), 'a free recovery remains visible')
 assert.equal(save.choices.every((choice) => resolveDomainAction(save, wanderlight, choice.label)?.status === 'accepted'), true, 'every displayed domain reply is executable now')
 
-save = act(save, '吃一顿热饭')
-assert.equal(save.stats.energy, 14)
-assert.ok(save.choices.some((choice) => choice.label === '找一份短工'), 'restored energy makes the shift visible again')
-assert.equal(save.choices.every((choice) => resolveDomainAction(save, wanderlight, choice.label)?.status === 'accepted'), true)
+save = act(save, '结束今天，休息到清晨')
+assert.equal(save.facts.world_day, 2, '休息到清晨必须进入第二天')
+assert.equal(save.sessionEnded, true, '休息到清晨必须进入明确的日终停点')
+assert.equal(save.choices.length, 0, '日终停点不能继续显示吃饭、休息、短工或再次结束当天的普通选项')
+assert.equal(resolveDomainAction(save, wanderlight, '找一份短工')?.status, 'accepted', '进入第二天后短工冷却已解除，但必须等玩家继续漫游后才重新进入选择界面')
+
+const lowEnergy = {
+  ...createInitialSave(wanderlight),
+  stats: { ...createInitialSave(wanderlight).stats, energy: 2 },
+}
+const lowEnergyShift = resolveDomainAction(lowEnergy, wanderlight, '接一份九十分钟短工（报酬 9 枚）')
+assert.equal(lowEnergyShift?.status, 'rejected', '体力不足时短工必须在执行前拒绝')
+
+const legacyAfterShift = {
+  ...createInitialSave(wanderlight),
+  scene: 1,
+  time: '第 2 天 · 21:55',
+  facts: { world_day: 2 },
+  blocks: [
+    ...createInitialSave(wanderlight).blocks,
+    { id: 'action-1', kind: 'event' as const, text: '找一份短工' },
+    { id: 'domain-1', kind: 'event' as const, text: '旧版短工已经完成', data: { domainRule: 'local-shift', domainStatus: 'accepted' } },
+  ],
+}
+const migratedLegacy = repairDomainRepeatState(legacyAfterShift, wanderlight)
+assert.equal(resolveDomainAction(migratedLegacy, wanderlight, '找一份短工')?.status, 'rejected', '旧存档最新回合已完成短工时必须迁移冷却，不能更新后再扣一次')
+
+const movedAfterShift = {
+  ...migratedLegacy,
+  location: '杯影夜市',
+  sceneLocation: '杯影夜市',
+  map: migratedLegacy.map.map((node) => ({ ...node, current: node.id === 'cupshadow-market', visited: node.visited || node.id === 'cupshadow-market' })),
+}
+assert.equal(resolveDomainAction(movedAfterShift, wanderlight, '找一份短工')?.status, 'accepted', '移动到新地点后可以找到该地点当天的新短工')
+
+const english = createInitialSave(wanderlightEn)
+const englishFirst = resolveDomainAction(english, wanderlightEn, 'Take a ninety-minute shift (9 coin)')
+assert.equal(englishFirst?.status, 'accepted', 'English short-job label must resolve')
+const englishAfter = applyParsedScene(english, parseStoryProtocol(englishFirst!.successText, 'en'), wanderlightEn, 'Take a ninety-minute shift (9 coin)', undefined, undefined, undefined, englishFirst)
+assert.equal(resolveDomainAction(englishAfter, wanderlightEn, 'Look for a short job')?.status, 'rejected', 'English repeat must be blocked in the same place and day')
 
 const poor = { ...createInitialSave(wanderlight), stats: { ...createInitialSave(wanderlight).stats, coin: 2 } }
 const rejectedRoom = resolveDomainAction(poor, wanderlight, '住一晚')
@@ -49,4 +99,4 @@ assert.equal(afterRoom.stats.coin, 2, '明确订房后由领域 reducer 原子�
 assert.equal(afterRoom.facts.lodging_secured, true, '付款成功必须持久化已获得住宿')
 assert.equal(afterRoom.sessionEnded, true, '过夜住宿应进入已保存的自然停止点')
 
-console.log(JSON.stringify({ ok: true, checks: ['invalid-hidden-before-display', 'feasible-recovery-visible', 'restored-action-returns', 'free-input-specific-reason', 'lodging-payment-preflight', 'lodging-atomic-state'] }))
+console.log(JSON.stringify({ ok: true, checks: ['single-shift-per-location-day', 'visible-result-before-deltas', 'forced-repeat-zero-effects', 'day-end-zero-ordinary-choices', 'next-day-cooldown-cleared', 'new-location-reopens', 'legacy-repeat-migration', 'low-energy-preflight', 'zh-en-repeat-policy', 'feasible-recovery-visible', 'free-input-specific-reason', 'lodging-payment-preflight', 'lodging-atomic-state'] }))
