@@ -30,4 +30,14 @@ const rejectedRoom = resolveDomainAction(poor, wanderlight, '住一晚')
 assert.equal(rejectedRoom?.status, 'rejected')
 assert.ok(rejectedRoom?.reasons.some((reason) => reason.includes('十枚钱币')))
 
-console.log(JSON.stringify({ ok: true, checks: ['invalid-hidden-before-display', 'feasible-recovery-visible', 'restored-action-returns', 'free-input-specific-reason'] }))
+const poorPayment = resolveDomainAction(poor, wanderlight, '支付房费')
+assert.equal(poorPayment?.status, 'rejected', '自然语言付款也必须先经过房费余额检查')
+assert.equal(resolveDomainAction(poor, wanderlight, '询问旅店房费'), undefined, '询问价格不是订房或付款')
+
+const funded = { ...createInitialSave(wanderlight), stats: { ...createInitialSave(wanderlight).stats, coin: 12 } }
+const afterRoom = act(funded, '订一间房')
+assert.equal(afterRoom.stats.coin, 2, '明确订房后由领域 reducer 原子扣除十枚钱币')
+assert.equal(afterRoom.facts.lodging_secured, true, '付款成功必须持久化已获得住宿')
+assert.equal(afterRoom.sessionEnded, true, '过夜住宿应进入已保存的自然停止点')
+
+console.log(JSON.stringify({ ok: true, checks: ['invalid-hidden-before-display', 'feasible-recovery-visible', 'restored-action-returns', 'free-input-specific-reason', 'lodging-payment-preflight', 'lodging-atomic-state'] }))

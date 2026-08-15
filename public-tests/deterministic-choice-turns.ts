@@ -15,7 +15,7 @@ function play(save: StorySave, cartridge: StoryCartridge, action: string): Story
   let parsed = canonicalizePaymentMetadata(save, parseStoryProtocol(turn.content, cartridge.locale), cartridge, action)
   parsed = canonicalizeTurnMetadata(save, parsed, cartridge, turn.imagePrompt, action, true).parsed
   const violations = [
-    ...validatePaymentConsistency(save, parsed, cartridge),
+    ...validatePaymentConsistency(save, parsed, cartridge, action),
     ...validateTurnConsistency(save, parsed, cartridge, turn.imagePrompt),
   ]
   assert.deepEqual(violations, [], `${cartridge.locale}: invalid authored turn for ${action}`)

@@ -236,7 +236,7 @@ for (const openingCartridge of [listCartridges('zh')[0], listCartridges('en')[0]
     ok(authored, `${openingCartridge.locale} opening choice ${choice.id} has a deterministic local turn`)
     const paymentSafe = canonicalizePaymentMetadata(openingSave, parseStoryProtocol(authored.content, openingCartridge.locale), openingCartridge, choice.label)
     const consistent = canonicalizeTurnMetadata(openingSave, paymentSafe, openingCartridge, authored.imagePrompt, choice.label, true)
-    equal(validatePaymentConsistency(openingSave, consistent.parsed, openingCartridge).length, 0, `${openingCartridge.locale} opening choice ${choice.id} satisfies payment state`)
+    equal(validatePaymentConsistency(openingSave, consistent.parsed, openingCartridge, choice.label).length, 0, `${openingCartridge.locale} opening choice ${choice.id} satisfies payment state`)
     equal(validateTurnConsistency(openingSave, consistent.parsed, openingCartridge, consistent.imagePrompt).length, 0, `${openingCartridge.locale} opening choice ${choice.id} satisfies turn state without a model repair`)
   }
 }

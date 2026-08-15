@@ -114,9 +114,9 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'overnight-room', intent: s('住一晚并保存', 'stay overnight and save'),
-        match: [s('住一晚', 'stay for the night'), s('租个房间', 'rent a room'), s('在旅店休息', 'rest at the inn')],
+        match: [s('住一晚', 'stay for the night'), s('租个房间', 'rent a room'), s('在旅店休息', 'rest at the inn'), s('支付房费', 'pay for the room'), s('付房费', 'pay the room fee'), s('订一间房', 'book a room'), s('预订房间', 'reserve a room')],
         requirements: [{ type: 'stat', id: 'coin', min: 10, reason: s('房费是十枚钱币，你现在付不起。', 'The room costs ten coin, which you cannot afford yet.') }],
-        effects: [{ type: 'stat', id: 'coin', delta: -10 }, { type: 'stat', id: 'energy', delta: 28 }, { type: 'clock-add', minutes: 660 }, { type: 'fact-add', id: 'nights_slept', delta: 1 }, { type: 'session', ended: true, reason: s('你关上房门。今晚的地点、人物和约定都已保存；下次回来时，从清晨继续。', 'You close the door. Tonight’s places, people, and promises are saved; the next visit begins in the morning.') }],
+        effects: [{ type: 'stat', id: 'coin', delta: -10 }, { type: 'stat', id: 'energy', delta: 28 }, { type: 'clock-add', minutes: 660 }, { type: 'fact-add', id: 'nights_slept', delta: 1 }, { type: 'fact', id: 'lodging_secured', value: true }, { type: 'session', ended: true, reason: s('你关上房门。今晚的地点、人物和约定都已保存；下次回来时，从清晨继续。', 'You close the door. Tonight’s places, people, and promises are saved; the next visit begins in the morning.') }],
         successText: s('热水、干床单和一扇能锁上的门，让这一天终于停了下来。', 'Hot water, dry sheets, and a door that locks finally bring the day to a stop.'),
         successChoices: localChoices,
         rejectionChoices: localChoices,

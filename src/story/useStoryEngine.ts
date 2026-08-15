@@ -8,7 +8,7 @@ import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
 import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
-import { canonicalizePaymentMetadata, repairKnownPaymentGap, validatePaymentConsistency } from './engine/paymentConsistency'
+import { canonicalizePaymentMetadata, repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, validatePaymentConsistency } from './engine/paymentConsistency'
 import { canCommitDisplayedChoiceWithoutGeneratedReplies, canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
@@ -89,7 +89,9 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
   if (!candidate || candidate.cartridgeId !== cartridge.id || !Array.isArray(candidate.blocks)) return createInitialSave(cartridge, incomingChatId)
   if (incomingChatId && candidate.remoteChatId && candidate.remoteChatId !== incomingChatId) return createInitialSave(cartridge, incomingChatId)
   const repaired = repairLegacyConsistencyRecovery(repairKnownForestSceneDivergence(
-    repairKnownPaymentGap(recoverPersistedChoices(repairMockLoop(candidate, cartridge), cartridge), cartridge),
+    repairKnownUnauthorizedLodgingPayment(
+      repairKnownPaymentGap(recoverPersistedChoices(repairMockLoop(candidate, cartridge), cartridge), cartridge), cartridge,
+    ),
     cartridge,
   ), cartridge)
   let blocks = repaired.blocks.filter((block) => !(block.kind === 'narration' && isStoryProtocolResidue(block.text)))
@@ -332,7 +334,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
         parsed = canonical.parsed
         if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
         const turnViolations = mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)
-        const violations = [...validatePaymentConsistency(base, parsed, activeCartridge), ...turnViolations]
+        const violations = [...validatePaymentConsistency(base, parsed, activeCartridge, normalizedAction), ...turnViolations]
         if (violations.length) {
           setProgress({ label: t(actionLocale, 'checkingState'), percent: 82 })
           if (authoredTurn) throw new Error(`invalid deterministic turn: ${violations.join(', ')}`)
@@ -346,7 +348,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
           parsed = canonical.parsed
           if (canonical.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
           const remaining = [
-            ...validatePaymentConsistency(base, parsed, activeCartridge),
+            ...validatePaymentConsistency(base, parsed, activeCartridge, normalizedAction),
             ...(mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)),
           ]
           if (remaining.length) {
