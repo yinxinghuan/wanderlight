@@ -8,7 +8,7 @@ import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
 import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
-import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment } from './engine/paymentConsistency'
+import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, repairUnsettledContractPayment } from './engine/paymentConsistency'
 import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence, repairPersistedMapRouteHints } from './engine/turnConsistency'
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
@@ -90,9 +90,9 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
   if (!candidate || candidate.cartridgeId !== cartridge.id || !Array.isArray(candidate.blocks)) return createInitialSave(cartridge, incomingChatId)
   if (incomingChatId && candidate.remoteChatId && candidate.remoteChatId !== incomingChatId) return createInitialSave(cartridge, incomingChatId)
   const repaired = repairLegacyConsistencyRecovery(repairKnownForestSceneDivergence(
-    repairKnownUnauthorizedLodgingPayment(
+    repairKnownUnauthorizedLodgingPayment(repairUnsettledContractPayment(
       repairKnownPaymentGap(recoverPersistedChoices(repairMockLoop(candidate, cartridge), cartridge), cartridge), cartridge,
-    ),
+    ), cartridge),
     cartridge,
   ), cartridge)
   let blocks = repaired.blocks.filter((block) => !(block.kind === 'narration' && isStoryProtocolResidue(block.text)))

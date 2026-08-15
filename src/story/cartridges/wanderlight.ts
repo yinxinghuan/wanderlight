@@ -327,7 +327,7 @@ function make(locale: Locale): StoryCartridge {
     ...(
       zh
         ? [
-            localSideTurn('拿短工报酬后留在码头', '灯湾码头', '你收好已经结清的短工报酬，明确不跟随木箱上车。媛夕接受这个决定；灯湾码头仍有短工、热饭和公共长凳，没有替你新增承诺。', { characterIds: ['mira-voss'] }),
+            localSideTurn('拿短工报酬后留在码头', '灯湾码头', '你把木箱搬到月线货运门口，确认固定带扣稳，却没有跟着上车。媛夕验收后把约定的八枚钱币交给你。你收好钱币留在灯湾码头；这里仍有短工、热饭和公共长凳。\n[job: action="settle" id="mira-seed-crate"]', { characterIds: ['mira-voss'] }),
             localSideTurn('问媛夕这些种子有什么用', '灯湾码头', '媛夕把一枚种荚托在掌心。它会顺着月光改变生长方向；她正把这一批送去银叶葡萄丘，比较雨后葡萄藤的反应。她确认木箱仍等着装上末班月线。', { characterIds: ['mira-voss'], choices: ['帮媛夕把木箱送上月线', ...safeLocalChoices.slice(0, 2)] }),
             {
               action: '沿葡萄行找还在剪枝的人',
@@ -346,7 +346,7 @@ function make(locale: Locale): StoryCartridge {
             localSideTurn('去码头找修网的短工', '潮汐群岛', '你在潮汐群岛码头查看修网告示。工头说明这是普通短工，只有明确接下并完成后才结算；当前没有替你提前增加钱币。', { characterIds: ['celeste-ardin'] }),
           ]
         : [
-            localSideTurn('Take the short-job pay and stay at the quay', 'Lantern Quay', 'You keep the pay already settled and decline the onward trip. Mira accepts the boundary; the quay still has shift notices, hot food, and public benches.', { characterIds: ['mira-voss'] }),
+            localSideTurn('Take the short-job pay and stay at the quay', 'Lantern Quay', 'You carry the crate to the Moonline freight door and secure its straps without boarding. After checking the load, Mira pays you the agreed 8 coin. You pocket it and stay at Lantern Quay, where shift notices, hot food, and public benches remain available.\n[job: action="settle" id="mira-seed-crate"]', { characterIds: ['mira-voss'] }),
             localSideTurn('Ask Mira what the seeds are used for', 'Lantern Quay', 'Mira rests one seed case in her palm. It turns with moonlight, and she is taking this batch to Silverleaf Vineyard to compare the vines after rain. The crate still needs to reach the last Moonline.', { characterIds: ['mira-voss'], choices: ['Help Mira load the crate onto the Moonline', ...safeLocalChoices.slice(0, 2)] }),
             localSideTurn('Ask the steward whether the train needs more help', 'Moonline Carriage', 'The steward checks the carriage list and confirms that no urgent shift remains onboard. The completed crate job is already settled; you may look for ordinary work, food, or rest.', { characterIds: ['mira-voss'] }),
             localSideTurn('Take the coin and get off alone at the next stop', 'Moonline Carriage', 'You keep the pay already settled and tell Mira you will leave the train alone. When the doors open at Silverleaf Vineyard, you step onto the wet platform without creating another obligation.', { characterIds: ['mira-voss'], destination: 'Silverleaf Vineyard', connectedTo: 'Moonline Carriage' }),

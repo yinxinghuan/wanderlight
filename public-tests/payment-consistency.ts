@@ -1,5 +1,5 @@
 import { listCartridges } from '../src/story/cartridges/index'
-import { actionAuthorizesCoinSpend, canonicalizePaymentMetadata, repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
+import { actionAuthorizesCoinSpend, canonicalizePaymentMetadata, repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, repairUnsettledContractPayment, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyParsedScene, createInitialSave } from '../src/story/engine/reducer'
 
@@ -49,6 +49,55 @@ const copperCoinScreenshot = parseStoryProtocol('整理工作完成后，她把�
 const copperCoinViolations = validatePaymentConsistency(initial, copperCoinScreenshot, cartridge)
 ok(copperCoinViolations.includes('payment.completed_payment_requires_exact_amount'), '“几枚铜币”同样必须被识别并拒绝模糊入账')
 ok(copperCoinViolations.includes('job.completed_work_requires_settlement'), '铜币付款不能绕过工作结算')
+
+const vagueCompensationScreenshot = parseStoryProtocol(`这份体力活让你感到疲惫，但也赚得了些急需的报酬。
+
+搬运结束，招工负责人走过来，递给你们报酬。`, 'zh')
+const vagueCompensationViolations = validatePaymentConsistency(initial, vagueCompensationScreenshot, cartridge, '帮媛夕把木箱送上货船')
+ok(vagueCompensationViolations.includes('payment.completed_payment_requires_exact_amount'), '“赚得了些报酬”不能绕过精确金额校验')
+ok(vagueCompensationViolations.includes('job.completed_work_requires_settlement'), '“递给你们报酬”必须触发工作结算校验')
+
+const vagueWageEnglish = parseStoryProtocol('The cargo shift ends. You earned some pay, and the foreman hands you the wages.', 'en')
+const vagueWageEnglishViolations = validatePaymentConsistency(englishInitial, vagueWageEnglish, englishCartridge, 'Help load the cargo')
+ok(vagueWageEnglishViolations.includes('payment.completed_payment_requires_exact_amount'), 'English vague wages must require an exact visible amount')
+ok(vagueWageEnglishViolations.includes('job.completed_work_requires_settlement'), 'English vague wages must require job settlement')
+for (const phrase of ['你收到了今天的薪水。', '工头把工资交给你。', '你的工钱已经到账。', '负责人给你发了报酬。']) {
+  ok(validatePaymentConsistency(initial, parseStoryProtocol(phrase, 'zh'), cartridge).includes('payment.completed_payment_requires_exact_amount'), `中文收入同义词必须要求精确金额: ${phrase}`)
+}
+for (const phrase of ['You received your salary.', 'You got paid for the shift.', 'The foreman hands you the wages.', 'Your compensation was settled.']) {
+  ok(validatePaymentConsistency(englishInitial, parseStoryProtocol(phrase, 'en'), englishCartridge).includes('payment.completed_payment_requires_exact_amount'), `English income synonym must require an exact amount: ${phrase}`)
+}
+const exactSalary = canonicalizePaymentMetadata(initial, parseStoryProtocol('装货结束后，你收到了八枚钱币的工资。', 'zh'), cartridge, '完成装货')
+equal(validatePaymentConsistency(initial, exactSalary, cartridge, '完成装货').length, 0, '精确工资同义词应建立并结算工作合同')
+equal(applyParsedScene(initial, exactSalary, cartridge, '完成装货').stats.coin, 14, '精确工资同义词必须实际入账')
+const exactEnglishSalary = canonicalizePaymentMetadata(englishInitial, parseStoryProtocol('After the shift, you received 8 coin as salary.', 'en'), englishCartridge, 'Finish the shift')
+equal(validatePaymentConsistency(englishInitial, exactEnglishSalary, englishCartridge, 'Finish the shift').length, 0, 'Exact English salary should create and settle a job contract')
+equal(applyParsedScene(englishInitial, exactEnglishSalary, englishCartridge, 'Finish the shift').stats.coin, 14, 'Exact English salary must credit coin')
+equal(validatePaymentConsistency(initial, parseStoryProtocol('媛夕领到了她自己的工钱，你没有参与这份工作。', 'zh'), cartridge).length, 0, 'NPC 自己领工资不能误记成玩家收入')
+equal(validatePaymentConsistency(englishInitial, parseStoryProtocol('Celeste earned her pay. You only watched the stage.', 'en'), englishCartridge).length, 0, 'NPC English wages cannot be mistaken for player income')
+equal(validatePaymentConsistency(initial, parseStoryProtocol('询问不会替你接受工作，也不会提前获得报酬。', 'zh'), cartridge).length, 0, '明确否定的收入不能误判成已收款')
+equal(validatePaymentConsistency(englishInitial, parseStoryProtocol('Asking does not accept the job, and you will not receive wages yet.', 'en'), englishCartridge).length, 0, 'English denied wages cannot be mistaken for receipt')
+equal(validatePaymentConsistency(englishInitial, parseStoryProtocol('No shift or payment is committed until you take and finish the work.', 'en'), englishCartridge).length, 0, 'The letters “if” inside “shift” cannot create a false payment promise')
+
+const savedVaguePayment = {
+  ...afterOffer,
+  scene: 3,
+  blocks: [...afterOffer.blocks,
+    { id: 'action-3', kind: 'event' as const, text: '帮媛夕把木箱送上货船' },
+    { id: 'vague-pay-3', kind: 'narration' as const, text: '搬运结束，招工负责人走过来，递给你们报酬。' },
+  ],
+}
+const repairedVaguePayment = repairUnsettledContractPayment(savedVaguePayment, cartridge)
+equal(repairedVaguePayment.stats.coin, 14, '旧档仅在唯一精确工资合同存在时补回漏掉的报酬')
+equal(repairedVaguePayment.jobs[0]?.status, 'settled', '旧档补账后合同必须结清')
+equal(repairUnsettledContractPayment(repairedVaguePayment, cartridge).stats.coin, 14, '合同补账必须幂等')
+const ambiguousVaguePayment = repairUnsettledContractPayment({
+  ...savedVaguePayment,
+  jobs: [...savedVaguePayment.jobs, { id: 'other-job', label: '另一份工作', wage: 5, status: 'offered' as const, offeredAtScene: 2 }],
+}, cartridge)
+equal(ambiguousVaguePayment.stats.coin, 6, '多个未结合同存在时不得猜测该结算哪一份')
+const noContractVaguePayment = repairUnsettledContractPayment({ ...savedVaguePayment, jobs: [] }, cartridge)
+equal(noContractVaguePayment.stats.coin, 6, '没有精确合同的旧档不得凭“些报酬”猜金额')
 
 const legacyScreenshot = {
   ...initial,
