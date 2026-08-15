@@ -556,10 +556,11 @@ function deriveReplylessChoices(
   cartridge: StoryCartridge,
   actionId: string,
 ): StorySave['choices'] {
-  if (save.location !== next.location) return []
-  const candidates = save.choices
-    .filter((choice) => choice.label.trim() !== actionId.trim())
-    .map((choice, index) => ({ id: `derived-${next.scene}-${index}`, label: choice.label }))
+  const candidates = save.location === next.location
+    ? save.choices
+      .filter((choice) => choice.label.trim() !== actionId.trim())
+      .map((choice, index) => ({ id: `derived-${next.scene}-${index}`, label: choice.label }))
+    : []
   const context = { ...next, blocks: [...next.blocks, ...effects] }
   // Ground the carry-over against the state in which those choices were
   // originally offered, plus the newly committed prose. `next.blocks`
@@ -571,15 +572,18 @@ function deriveReplylessChoices(
     const domain = resolveDomainAction(context, cartridge, choice.label)
     return domain ? domain.status === 'accepted' : grounded.has(choice.label)
   })
-  if (retained.length || !save.sessionEnded) return retained.slice(0, 5)
-  // A player explicitly continuing from a checkpoint has no previous tray to
-  // carry forward. In that one case, derive local exits from authoritative
-  // state; this is continuation, not consistency-error recovery.
-  const resumeCandidates = createRecoveryChoices(next, cartridge)
-  const resumeGrounded = new Set(filterGroundedChoices(resumeCandidates, context, cartridge, [...parsed.blocks, ...effects]).map((choice) => choice.label))
-  return resumeCandidates.filter((choice) => {
+  if (retained.length) return retained.slice(0, 5)
+
+  // A completed consequence must never leave the live tray empty merely
+  // because the selected action was the only previous choice. Derive fresh
+  // exits from the authoritative current place/objective, exclude the action
+  // that just completed, and ground them against the newly committed prose.
+  const stateCandidates = createRecoveryChoices(next, cartridge)
+    .filter((choice) => choice.label.trim() !== actionId.trim())
+  const stateGrounded = new Set(filterGroundedChoices(stateCandidates, context, cartridge, [...parsed.blocks, ...effects]).map((choice) => choice.label))
+  return stateCandidates.filter((choice) => {
     const domain = resolveDomainAction(context, cartridge, choice.label)
-    return domain ? domain.status === 'accepted' : resumeGrounded.has(choice.label)
+    return domain ? domain.status === 'accepted' : stateGrounded.has(choice.label)
   }).slice(0, 5)
 }
 
