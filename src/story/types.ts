@@ -31,6 +31,7 @@ export interface StatDefinition {
   warningAt?: number
   dangerAt?: number
   maxDelta?: number
+  domainMaxDelta?: number
   floorRule?: {
     threshold?: number
     enteredText: string
@@ -150,7 +151,19 @@ export type DomainEffect =
   | { type: 'clock'; value: string }
   | { type: 'clock-add'; minutes: number }
   | { type: 'session'; ended: boolean; reason?: string }
-export interface DomainActionRule { id: string; intent: string; match: string[]; matchMode?: 'contains' | 'exact'; requirements: DomainRequirement[]; effects: DomainEffect[]; successText: string; successChoices: string[]; rejectionChoices?: string[] }
+export interface DomainActionRule {
+  id: string
+  intent: string
+  match: string[]
+  matchMode?: 'contains' | 'exact'
+  intentGuard?: 'rest-commitment'
+  dangerPolicy?: 'advance' | 'suppress' | 'withdraw'
+  requirements: DomainRequirement[]
+  effects: DomainEffect[]
+  successText: string
+  successChoices: string[]
+  rejectionChoices?: string[]
+}
 export interface DomainDerivedItemMetric { itemId: string; metricId: string; label: string; factId: string; maximum: number; mode: 'remaining-from-used' }
 export type DomainDerivedFact =
   | { factId: string; mode: 'owned-item-count'; itemIds: string[] }
@@ -162,7 +175,16 @@ export interface StoryDomainRules {
   derivedFacts?: DomainDerivedFact[]
   objectiveTransitions?: DomainObjectiveTransition[]
 }
-export interface DomainActionResolution { status: 'accepted' | 'rejected'; ruleId: string; intent: string; effects: DomainEffect[]; reasons: string[]; successText: string; successChoices: string[] }
+export interface DomainActionResolution {
+  status: 'accepted' | 'rejected'
+  ruleId: string
+  intent: string
+  effects: DomainEffect[]
+  reasons: string[]
+  successText: string
+  successChoices: string[]
+  dangerPolicy?: DomainActionRule['dangerPolicy']
+}
 
 export interface JobContract {
   id: string

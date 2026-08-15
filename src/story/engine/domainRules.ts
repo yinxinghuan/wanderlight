@@ -24,6 +24,21 @@ function normalized(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/[\s，。！？、,.!?;；:："“”'‘’()（）]+/g, '')
 }
 
+function isRestCommitment(value: string): boolean {
+  const source = value.trim().toLocaleLowerCase()
+  const chineseRest = /(?:休息|歇一会|小睡|睡一会|睡觉|打盹|眯一会|恢复呼吸|住一晚|租[^，。！？]{0,8}房|支付房费|付房费|订[^，。！？]{0,8}房|今天不再行动)/u.test(source)
+  const englishRest = /\b(?:rest|sleep|nap|doze)(?:ing)?\b|\b(?:take a break|catch my breath|stay for the night|rent (?:a )?room|pay (?:the )?room fee|book (?:a )?room|reserve (?:a )?room|stop for the day)\b/i.test(source)
+  if (!chineseRest && !englishRest) return false
+  const chineseNegation = /(?:不|别)(?:要|想|打算|准备|再)?(?:休息|睡|小睡|打盹|住下)/u.test(source)
+  const englishNegation = /\b(?:do not|don't|not going to|won't|without|skip)\b.{0,24}\b(?:rest|sleep|nap|stay)\b/i.test(source)
+  const chineseReport = /(?:告诉|跟[^，。！？]{0,10}说|对[^，。！？]{0,10}说|表示|说明).{0,24}(?:休息|睡|住下)/u.test(source)
+  const englishReport = /\b(?:tell|say to|explain to|let [a-z ]{1,20} know)\b.{0,48}\b(?:rest|sleep|stay)\b/i.test(source)
+  const chineseInquiry = /(?:问|询问|打听|了解|看看|查看).{0,18}(?:休息|睡|客房|房间)|(?:哪里|哪儿|有没有|能不能|是否).{0,18}(?:休息|睡|客房|房间)|(?:休息|客房|房间).{0,12}(?:多少钱|价格|条件)/u.test(source)
+  const englishInquiry = /\b(?:ask|inquire|check|learn|find out|whether|where can|is there|how much|price)\b.{0,48}\b(?:rest|sleep|nap|room|bed|shelter)\b/i.test(source)
+    || /\b(?:rest|room|bed|shelter)\b.{0,32}\b(?:price|cost|available|availability)\b/i.test(source)
+  return !chineseNegation && !englishNegation && !chineseReport && !englishReport && !chineseInquiry && !englishInquiry
+}
+
 function matchStrength(source: string, keyword: string): number {
   if (source.includes(keyword)) return 200 + keyword.length
   if (!/[\u3400-\u9fff]/.test(keyword)) return 0
@@ -93,6 +108,7 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
   if (!source || !cartridge.domainRules?.rules.length) return undefined
   const candidate = cartridge.domainRules.rules
     .map((rule, index) => {
+      if (rule.intentGuard === 'rest-commitment' && !isRestCommitment(action)) return null
       const matches = rule.match.map(normalized).map((keyword) => rule.matchMode === 'exact'
         ? source === keyword ? 1000 + keyword.length : 0
         : matchStrength(source, keyword)).filter(Boolean)
@@ -114,13 +130,19 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
   }
   if (!candidate) return undefined
   const reasons = candidate.rule.requirements.filter((requirement) => !requirementMet(requirement, save)).map((requirement) => requirement.reason)
+  const accepted = reasons.length === 0
+  const effects = accepted ? candidate.rule.effects.map((effect) => ({ ...effect })) : []
+  if (accepted && candidate.rule.dangerPolicy === 'withdraw' && save.danger.phase !== 'calm') {
+    effects.push({ type: 'danger', outcome: 'costly-success' })
+  }
   return {
-    status: reasons.length ? 'rejected' : 'accepted',
+    status: accepted ? 'accepted' : 'rejected',
     ruleId: candidate.rule.id,
     intent: candidate.rule.intent,
-    effects: reasons.length ? [] : candidate.rule.effects.map((effect) => ({ ...effect })),
+    effects,
     reasons,
     successText: candidate.rule.successText,
+    dangerPolicy: candidate.rule.dangerPolicy,
     successChoices: [...(reasons.length && candidate.rule.rejectionChoices
       ? candidate.rule.rejectionChoices
       : candidate.rule.successChoices)],
@@ -137,6 +159,11 @@ export function domainAllowsModelCommand(command: ParsedCommand, resolution?: Do
 
 export function domainOwnsDanger(resolution?: DomainActionResolution): boolean {
   return Boolean(resolution?.status === 'accepted' && resolution.effects.some((effect) => effect.type === 'danger'))
+}
+
+export function domainSuppressesDanger(resolution?: DomainActionResolution): boolean {
+  return Boolean(resolution?.status === 'accepted'
+    && (resolution.dangerPolicy === 'suppress' || resolution.dangerPolicy === 'withdraw' || domainOwnsDanger(resolution)))
 }
 
 function applyInventoryEffect(save: StorySave, effect: Extract<DomainEffect, { type: 'inventory' }>): number {
@@ -211,7 +238,8 @@ export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge
     const definition = cartridge.statDefinitions.find((entry) => entry.id === id)
     if (!definition) return
     const before = save.stats[id] ?? definition.initial
-    const maximum = definition.maxDelta == null ? Math.abs(requestedDelta) : Math.max(0, definition.maxDelta)
+    const registeredMaximum = definition.domainMaxDelta ?? definition.maxDelta
+    const maximum = registeredMaximum == null ? Math.abs(requestedDelta) : Math.max(0, registeredMaximum)
     const delta = clamp(requestedDelta, -maximum, maximum)
     const current = clamp(before + delta, definition.min, definition.max)
     save.stats[id] = current

@@ -13,7 +13,7 @@ import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
-import { activeStatFloorRule, domainOwnsDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
+import { activeStatFloorRule, domainSuppressesDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
 import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from './engine/authoredTurns'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
@@ -327,7 +327,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
       const authoredOpeningTurn = domainResolution ? undefined : resolveDeterministicOpeningTurn(base, activeCartridge, normalizedAction)
       const authoredChoiceTurn = domainResolution || authoredOpeningTurn ? undefined : resolveDeterministicChoiceTurn(base, activeCartridge, normalizedAction)
       const authoredTurn = authoredOpeningTurn ?? authoredChoiceTurn
-      const dangerDirective = domainResolution?.status === 'rejected' || domainOwnsDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
+      const dangerDirective = domainResolution?.status === 'rejected' || domainSuppressesDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
       let result = domainResolution
         ? { content: domainResolution.status === 'accepted' ? domainResolution.successText : domainResolution.reasons.join(activeCartridge.locale === 'zh' ? '；' : '; ') }
         : authoredTurn

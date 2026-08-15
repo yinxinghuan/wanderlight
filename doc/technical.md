@@ -45,7 +45,7 @@ public-tests/
 
 ### 状态、协议与回合
 
-`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作和调用适配器；生成结果统一先进入 `engine/turnPipeline.ts`，按同一份提交前存档依次完成支付规范化、地点/图片/选项规范化、机械校验与提交判定，只有通过后才一次性交给 `engine/reducer.ts`。人物、地图节点、具体场景、关系、物品、数值、工作合同、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`protocol.ts` 同时兼容标准 `[command: ...]` 与模型偶发的 `[command key="..."]` 缺冒号属性格式，机器协议不会进入可见正文；存档规范化也会移除旧版本已经泄漏的完整协议块。`engine/domainRules.ts` 权威结算短工、餐食、住宿、车厢休息、泛化消费澄清和六条普通车票路线，并用 `clock-add` 保持跨日时间；`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
+`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作和调用适配器；生成结果统一先进入 `engine/turnPipeline.ts`，按同一份提交前存档依次完成支付规范化、地点/图片/选项规范化、机械校验与提交判定，只有通过后才一次性交给 `engine/reducer.ts`。人物、地图节点、具体场景、关系、物品、数值、工作合同、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`protocol.ts` 同时兼容标准 `[command: ...]` 与模型偶发的 `[command key="..."]` 缺冒号属性格式，机器协议不会进入可见正文；存档规范化也会移除旧版本已经泄漏的完整协议块。`engine/domainRules.ts` 权威结算短工、餐食、普通/现场休息、公共休息处撤退、住宿、车厢休息、泛化消费澄清和六条普通车票路线，并用 `clock-add` 保持跨日时间；`rest-commitment` 意图门禁区分真正休息与询价/问路，`dangerPolicy` 决定恢复回合禁止同回合危险、或在撤退时原子结束当前威胁。`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
 
 动态有偿工作使用 `[job]` 协议：`offer` 固化稳定工作 ID、雇主、工作内容和明确工资，`settle` 只能结算未完成合同，并由 reducer 直接按记录工资增加钱币和 `jobs_completed`；同回合额外的 coin widget 会被拒绝且 reducer 也做去重防御。罗温和塞莱斯特的开局即时短工同样使用稳定 `offer → settle`，不再靠正文旁的裸加币命令。`paymentConsistency.ts` 在任何生成正文写入存档前机械核对钱币、铜板、铜币、硬币等报价、付款、消费和合同金额，并用当前玩家行动做消费授权门禁：询价、寻找和考虑不是付款同意；“把钱全部花完”没有购买对象，也不是交易授权，Cartridge 的精确领域规则会解释余额未变并要求选择具体商品或服务。未经授权的消费正文、正文声称花光但没有合法事务、隐藏扣款均拒绝；“你用这枚硬币支付”会识别为一枚支出，正向 coin widget 会被判为方向冲突。明确订房由 `overnight-room` 领域规则原子完成余额门禁、扣 `10` 枚、写入 `lodging_secured` 与结束当晚，模型不参与结算。钱币达到 `10` 时目标自动从挣钱推进为住宿/工作/搭车决策，未订房又降到 `9` 以下时退回挣钱。首次一致性失败会要求当前适配器完整重写同一回合，第二次仍失败则不提交。
 
@@ -77,7 +77,7 @@ public-tests/
 
 顶部工具由 `Icons.tsx` 的同一套 `24×24 / 1.7px` 线性 SVG 驱动，文字、声音和旅途手册共享等宽分段控件。HUD 使用浅色票券网格；精力、风闻保留进度轨，钱币只显示余额。`HeaderStat` 在值变化时同时保留旧值和新值，以方向相反的双层滚动交代前后关系，并显示 `+N / −N`；`prefers-reduced-motion` 下取消位移但保留静态变化量。点击任一 HUD 数值会打开对应玩家状态卡；三项 `StatDefinition.description` 分别说明它代表什么、如何变化和阈值影响。旅途手册默认进入人物列表。`CharacterPortrait` 通过角色持久化的 `anchorTaskId` 解析身份锚点 URL，并用模块级 Promise 缓存避免重复任务查询；同一图分别用于对话小头像、人物列表缩略图和详情竖幅大图，没有可用锚点时退回首字母。人物列表同时把关系事件汇总成“初识 / 熟悉 / 信任 / 默契 / 戒备”与共同经历数，人物详情仍展示事件来源；这不是公开好感度分数。
 
-`StatDefinition.floorRule` 是数值归零的权威门禁。`resolveDomainAction()` 在调用模型前拦截所有非恢复行动，只允许声明过的恢复规则；`applyParsedScene()` 在数值首次触底的同一回合写入世界内解释并替换底部选项；`normalizeSave()` 对已经保存的精力 `0` 旧档执行同样迁移，移除旧的危险选项并写入幂等提示。三条免费恢复路径由 cartridge 的 domain rules 原子结算时间、精力与恢复次数，模型不能改写恢复量或绕过门禁。
+`StatDefinition.floorRule` 是数值归零的权威门禁，但恢复规则从 `0–100` 任意精力值都可执行。`resolveDomainAction()` 在调用模型前把“去屋里休息、选择休息、小睡”等中英文明确行动归入本地普通休息，同时排除询问位置、房价和可用性的非授权表达；`applyParsedScene()` 在数值首次触底的同一回合写入世界内解释并替换底部选项；`normalizeSave()` 对已经保存的精力 `0` 旧档执行同样迁移。普通休息 `+8`、公共休息处 `+16`、热饭 `+12`、客房 `+28`、整夜 `+36` 和车厢 `+8` 都由 domain rules 原子结算；`domainMaxDelta=36` 只放宽可信本地交易，模型 widget 仍受 `maxDelta=24` 限制。危险未解除时普通恢复被原子拒绝；公共休息处撤退追加权威 `danger` 效果。`useStoryEngine()` 与 reducer 双层调用 `domainSuppressesDanger()`，防止外部或旧调用方把随机失败扣除叠加到已接受的休息回合。
 
 ### 音频与多语言
 
@@ -99,4 +99,4 @@ public-tests/
 - **调整画风或素材**：统一修改 cartridge 中的 `GOUACHE`、`sceneImageDirection` 与 `doc/visual.md`；正式资产只通过 AlterU Media Service 生成。换风格前必须重新做锚点→换地点 edit 连续性评审，不能只换一个风格词。
 - **调整数值与压力**：修改 cartridge 的 `statDefinitions`、`dangerDirector` 和对应 domain rules，并同步 `doc/requirements.md` 的具体数值与恢复合同。
 - **新增后端能力**：Aigram 平台能力扩展 `shared/runtime/bridge.ts`；若未来增加游戏自有 `/api/*`，必须从 `src/game-id.ts` 计算 `API_BASE = '/' + GAME_ID`，禁止写死旧 UUID 或裸请求 `/api/*`。
-- **验收**：公开仓库运行 `npm run test:image-director`、`npm run test:turn`、`npm run test:deterministic-choices`、`npm run test:domain`、`npm run test:payment`、`npm run test:security`、`npm run test:choices`、`npm run test:resume`、`npm run test:audio` 与 `npm run build`。任何说话者的重要对白强制表情镜头、已锚定人物身份绑定、动态人物不借错身份、环境图覆盖防护、短事务对白不过度出图、场景/目标/选项/配图原子对齐、所有作者按钮所有权、领域选项显示前可用性、选项缺失单故障提交、确定性合同按钮与旧恢复存档修复、报价不入账、合同原子结算、截图模糊付款拦截、消费授权、询价不扣款、“支付却 +1”方向拦截、住宿原子状态、重复结算防护、正文/行动票对齐、数字输入、恢复阅读锚点、程序化音频和恶意协议边界均有公开机械回归；完整六路生产模式浏览器试玩还会对生成层注入不一致回复，要求主路线零 `game-chat` 调用完成，并单独验证自由输入一次调用与不可执行输入具体解释。双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。
+- **验收**：公开仓库运行 `npm run test:image-director`、`npm run test:turn`、`npm run test:deterministic-choices`、`npm run test:domain`、`npm run test:rest-recovery`、`npm run test:payment`、`npm run test:security`、`npm run test:choices`、`npm run test:resume`、`npm run test:audio` 与 `npm run build`。恢复专项模拟至少覆盖中英文任意精力主动休息、动态地点休息选项、问询不误判、客房/整夜真实恢复值、危险拒绝与安全撤退、恶意模型指令隔离和同回合危险不叠加。任何说话者的重要对白强制表情镜头、已锚定人物身份绑定、动态人物不借错身份、环境图覆盖防护、短事务对白不过度出图、场景/目标/选项/配图原子对齐、所有作者按钮所有权、领域选项显示前可用性、选项缺失单故障提交、确定性合同按钮与旧恢复存档修复、报价不入账、合同原子结算、截图模糊付款拦截、消费授权、询价不扣款、“支付却 +1”方向拦截、住宿原子状态、重复结算防护、正文/行动票对齐、数字输入、恢复阅读锚点、程序化音频和恶意协议边界均有公开机械回归；完整六路生产模式浏览器试玩还会对生成层注入不一致回复，要求主路线零 `game-chat` 调用完成，并单独验证自由输入一次调用与不可执行输入具体解释。双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。

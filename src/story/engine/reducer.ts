@@ -3,7 +3,7 @@ import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
 import { createInitialDangerState, dangerDirectiveChoices, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
-import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
+import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, domainSuppressesDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
 import { resolveDeterministicChoiceTurn } from './authoredTurns'
 import { bindChoiceDestinations, inferActionDestination, mergeRouteHints, playerDeclaredLocationAlias, stableDynamicLocationId, validatedDynamicRouteHints } from './turnConsistency'
@@ -675,7 +675,7 @@ export function applyParsedScene(
   imageCharacterId?: string,
 ): StorySave {
   const parsedCheckpoint = parsed.commands.some((command) => command.type === 'session_end')
-  const activeDangerDirective = parsedCheckpoint ? undefined : dangerDirective
+  const activeDangerDirective = parsedCheckpoint || domainSuppressesDanger(domainResolution) ? undefined : dangerDirective
   const commandDestination = parsed.commands.find((command) => command.type === 'map_update')
   const domainMap = domainResolution?.status === 'accepted' ? domainResolution.effects.find((effect) => effect.type === 'map') : undefined
   const domainDestination = domainMap?.type === 'map'

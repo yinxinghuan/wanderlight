@@ -65,6 +65,11 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
     s('放弃当前行动，去最近的公共休息处', 'Abandon the current action and reach the nearest public rest area'),
     s('结束今天，休息到清晨', 'End the day and rest until morning'),
   ] as [string, string, string, string, string]
+  const safeRecovery = {
+    type: 'danger' as const,
+    phases: ['calm' as const],
+    reason: s('眼前的危险还没有解除，现在停下来休息会让你暴露其中。先应对危险，或撤退到安全的公共休息处。', 'The immediate danger is still active; stopping to rest would leave you exposed. Address it first, or withdraw to a safe public rest area.'),
+  }
   return {
     objectiveTransitions: [
       {
@@ -102,8 +107,10 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'catch-breath', intent: s('原地休息四十五分钟', 'rest in place for forty-five minutes'),
-        match: [s('原地坐下，休息四十五分钟', 'sit down and rest for forty-five minutes'), s('再休息四十五分钟', 'rest for another forty-five minutes'), s('原地休息', 'rest in place'), s('慢慢恢复呼吸', 'catch my breath')],
-        requirements: [],
+        match: [s('原地坐下，休息四十五分钟', 'sit down and rest for forty-five minutes'), s('再休息四十五分钟', 'rest for another forty-five minutes'), s('原地休息', 'rest in place'), s('慢慢恢复呼吸', 'catch my breath'), s('休息', 'rest'), s('歇一会', 'take a break'), s('小睡', 'nap'), s('眯一会', 'doze')],
+        intentGuard: 'rest-commitment',
+        dangerPolicy: 'suppress',
+        requirements: [safeRecovery],
         effects: [{ type: 'stat', id: 'energy', delta: 8 }, { type: 'clock-add', minutes: 45 }, { type: 'fact-add', id: 'exhaustion_recoveries', delta: 1 }],
         successText: s('你不再勉强往前走，而是原地坐下，等呼吸和双腿慢慢恢复。四十五分钟后，你重新有了行动的力气。', 'You stop forcing yourself onward and sit until your breathing and legs steady. Forty-five minutes later, you can move again.'),
         successChoices: localChoices,
@@ -112,6 +119,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       {
         id: 'retreat-to-rest', intent: s('前往最近的公共休息处', 'reach the nearest public rest area'),
         match: [s('放弃当前行动，去最近的公共休息处', 'abandon the current action and reach the nearest public rest area'), s('去最近的公共休息处', 'reach the nearest public rest area'), s('找公共休息处', 'find a public rest area')],
+        intentGuard: 'rest-commitment',
+        dangerPolicy: 'withdraw',
         requirements: [],
         effects: [{ type: 'stat', id: 'energy', delta: 16 }, { type: 'clock-add', minutes: 120 }, { type: 'fact-add', id: 'exhaustion_recoveries', delta: 1 }],
         successText: s('你放弃原来的安排，沿途停了几次，终于到达最近的公共休息处。两小时过去，错过的行程不会倒转，但你已经能够继续行动。', 'You abandon the original plan and stop several times before reaching the nearest public rest area. Two hours pass; the missed plan will not rewind, but you can move again.'),
@@ -121,7 +130,9 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       {
         id: 'rest-until-morning', intent: s('结束今天并休息到清晨', 'end the day and rest until morning'),
         match: [s('结束今天，休息到清晨', 'end the day and rest until morning'), s('休息到清晨', 'rest until morning'), s('今天不再行动', 'stop for the day')],
-        requirements: [],
+        intentGuard: 'rest-commitment',
+        dangerPolicy: 'suppress',
+        requirements: [safeRecovery],
         effects: [{ type: 'stat', id: 'energy', delta: 36 }, { type: 'clock-add', minutes: 600 }, { type: 'fact-add', id: 'exhaustion_recoveries', delta: 1 }, { type: 'session', ended: true, reason: s('你结束了今天的行动。地点、人物和约定都已保存；下次回来时，从休息后的清晨继续。', 'You end the day. Places, people, and promises are saved; the next visit begins after your morning rest.') }],
         successText: s('你不再追赶今晚剩下的安排，找到能避风的地方休息。睡意很快盖过远处的声响。', 'You stop chasing the rest of tonight’s plans and find shelter from the wind. Sleep soon covers the distant sounds.'),
         successChoices: localChoices,
@@ -139,7 +150,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       {
         id: 'hot-meal', intent: s('吃一顿热饭', 'eat a hot meal'),
         match: [s('吃一顿热饭', 'eat a hot meal'), s('吃点东西', 'get something to eat'), s('买一顿饭', 'buy a meal')],
-        requirements: [{ type: 'stat', id: 'coin', min: 4, reason: s('你还差几枚钱币，摊主没有答应赊账。', 'You are a few coin short, and the vendor will not open a tab.') }],
+        dangerPolicy: 'suppress',
+        requirements: [safeRecovery, { type: 'stat', id: 'coin', min: 4, reason: s('你还差几枚钱币，摊主没有答应赊账。', 'You are a few coin short, and the vendor will not open a tab.') }],
         effects: [{ type: 'stat', id: 'coin', delta: -4 }, { type: 'stat', id: 'energy', delta: 12 }, { type: 'clock-add', minutes: 35 }, { type: 'fact-add', id: 'meals_eaten', delta: 1 }],
         successText: s('你吃完一碗冒着热气的炖菜，坐到双手不再发冷才起身。', 'You finish a bowl of hot stew and stay seated until your hands stop feeling cold.'),
         successChoices: localChoices,
@@ -148,7 +160,9 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       {
         id: 'overnight-room', intent: s('住一晚并保存', 'stay overnight and save'),
         match: [s('住一晚', 'stay for the night'), s('租个房间', 'rent a room'), s('在旅店休息', 'rest at the inn'), s('支付房费', 'pay for the room'), s('付房费', 'pay the room fee'), s('订一间房', 'book a room'), s('预订房间', 'reserve a room')],
-        requirements: [{ type: 'stat', id: 'coin', min: 10, reason: s('房费是十枚钱币，你现在付不起。', 'The room costs ten coin, which you cannot afford yet.') }],
+        intentGuard: 'rest-commitment',
+        dangerPolicy: 'suppress',
+        requirements: [safeRecovery, { type: 'stat', id: 'coin', min: 10, reason: s('房费是十枚钱币，你现在付不起。', 'The room costs ten coin, which you cannot afford yet.') }],
         effects: [{ type: 'stat', id: 'coin', delta: -10 }, { type: 'stat', id: 'energy', delta: 28 }, { type: 'clock-add', minutes: 660 }, { type: 'fact-add', id: 'nights_slept', delta: 1 }, { type: 'fact', id: 'lodging_secured', value: true }, { type: 'session', ended: true, reason: s('你关上房门。今晚的地点、人物和约定都已保存；下次回来时，从清晨继续。', 'You close the door. Tonight’s places, people, and promises are saved; the next visit begins in the morning.') }],
         successText: s('热水、干床单和一扇能锁上的门，让这一天终于停了下来。', 'Hot water, dry sheets, and a door that locks finally bring the day to a stop.'),
         successChoices: localChoices,
@@ -157,7 +171,9 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       {
         id: 'carriage-rest', intent: s('在月线车厢休息', 'rest in the Moonline carriage'),
         match: [s('在车厢休息', 'rest in the carriage'), s('在车上眯一会', 'nap on the train'), s('靠着车窗休息', 'rest by the window')],
-        requirements: [{ type: 'map', nodeId: 'moonline-carriage', reason: s('你得先上月线，才能在车厢里休息。', 'You need to board the Moonline before you can rest in its carriage.') }],
+        intentGuard: 'rest-commitment',
+        dangerPolicy: 'suppress',
+        requirements: [safeRecovery, { type: 'map', nodeId: 'moonline-carriage', reason: s('你得先上月线，才能在车厢里休息。', 'You need to board the Moonline before you can rest in its carriage.') }],
         effects: [{ type: 'stat', id: 'energy', delta: 8 }, { type: 'clock-add', minutes: 45 }, { type: 'fact-add', id: 'carriage_rests', delta: 1 }],
         successText: s('你靠着温热的车窗闭了一会儿眼。列车没有停，但肩膀终于放松下来。', 'You close your eyes against the warm window. The train keeps moving, but the tension leaves your shoulders.'),
         successChoices: localChoices,
@@ -378,8 +394,8 @@ function make(locale: Locale): StoryCartridge {
     initialFacts: { all_intimate_characters_adult: true, dynamic_identity_trial: true, moonline_stamps_used: 0, world_day: 1, jobs_completed: 0, meals_eaten: 0, nights_slept: 0, carriage_rests: 0, exhaustion_recoveries: 0 },
     statDefinitions: [
       {
-        id: 'energy', label: s('精力', 'Energy'), min: 0, max: 100, initial: 72, display: 'bar', inverse: true, warningAt: 28, dangerAt: 8, maxDelta: 24,
-        description: s('代表还能承受多少工作、赶路和危险。低于 28 会进入疲惫提醒，短工低于 12 无法进行；归零后只能先恢复。热饭 +12、客房 +28、车厢 +8。', 'How much work, travel, and danger you can still bear. Below 28 signals fatigue; shifts require 12; at zero you must recover first. Hot meal +12, room +28, carriage +8.'),
+        id: 'energy', label: s('精力', 'Energy'), min: 0, max: 100, initial: 72, display: 'bar', inverse: true, warningAt: 28, dangerAt: 8, maxDelta: 24, domainMaxDelta: 36,
+        description: s('代表还能承受多少工作、赶路和危险。任何时候都能主动休息；普通休息 +8、公共休息处 +16、热饭 +12、客房 +28、休息到清晨 +36。低于 28 会疲惫，短工低于 12 无法进行；归零后必须先恢复。危险未解除时只能先应对或撤退。', 'How much work, travel, and danger you can still bear. You may rest at any time: ordinary rest +8, public rest area +16, hot meal +12, room +28, rest until morning +36. Below 28 signals fatigue; shifts require 12; at zero you must recover first. During active danger, respond or withdraw before resting.'),
         floorRule: {
           threshold: 0,
           enteredText: s('你的精力已经耗尽。刚才的行动没有成功，原来的后果仍然存在；在恢复之前，你无法继续工作、赶路或深入探索。', 'Your energy is exhausted. The attempted action failed and its consequence remains; until you recover, you cannot work, travel, or push deeper.'),
