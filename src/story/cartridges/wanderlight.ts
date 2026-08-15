@@ -59,10 +59,12 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
   const zh = locale === 'zh'
   const s = (cn: string, en: string) => zh ? cn : en
   const localChoices = [
-    s('看看这里还有什么工作', 'Look for another local job'),
-    s('找个人聊聊最近的消息', 'Ask someone for local news'),
-    s('前往月线车站', 'Head to the Moonline station'),
-  ] as [string, string, string]
+    s('找一份短工', 'Look for a short job'),
+    s('吃一顿热饭', 'Get something to eat'),
+    s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'),
+    s('放弃当前行动，去最近的公共休息处', 'Abandon the current action and reach the nearest public rest area'),
+    s('结束今天，休息到清晨', 'End the day and rest until morning'),
+  ] as [string, string, string, string, string]
   return {
     rules: [
       {
@@ -71,8 +73,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         requirements: [],
         effects: [{ type: 'stat', id: 'energy', delta: 8 }, { type: 'clock-add', minutes: 45 }, { type: 'fact-add', id: 'exhaustion_recoveries', delta: 1 }],
         successText: s('你不再勉强往前走，而是原地坐下，等呼吸和双腿慢慢恢复。四十五分钟后，你重新有了行动的力气。', 'You stop forcing yourself onward and sit until your breathing and legs steady. Forty-five minutes later, you can move again.'),
-        successChoices: [s('再休息四十五分钟', 'Rest for another forty-five minutes'), s('花四枚钱币吃一顿热饭', 'Spend four coin on a hot meal'), s('结束今天，休息到清晨', 'End the day and rest until morning')],
-        rejectionChoices: [s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'), s('放弃当前行动，去最近的公共休息处', 'Abandon the current action and reach the nearest public rest area'), s('结束今天，休息到清晨', 'End the day and rest until morning')],
+        successChoices: localChoices,
+        rejectionChoices: localChoices,
       },
       {
         id: 'retreat-to-rest', intent: s('前往最近的公共休息处', 'reach the nearest public rest area'),
@@ -80,8 +82,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         requirements: [],
         effects: [{ type: 'stat', id: 'energy', delta: 16 }, { type: 'clock-add', minutes: 120 }, { type: 'fact-add', id: 'exhaustion_recoveries', delta: 1 }],
         successText: s('你放弃原来的安排，沿途停了几次，终于到达最近的公共休息处。两小时过去，错过的行程不会倒转，但你已经能够继续行动。', 'You abandon the original plan and stop several times before reaching the nearest public rest area. Two hours pass; the missed plan will not rewind, but you can move again.'),
-        successChoices: [s('查看现在还能做什么', 'See what is still possible now'), s('花四枚钱币吃一顿热饭', 'Spend four coin on a hot meal'), s('结束今天，休息到清晨', 'End the day and rest until morning')],
-        rejectionChoices: [s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'), s('放弃当前行动，去最近的公共休息处', 'Abandon the current action and reach the nearest public rest area'), s('结束今天，休息到清晨', 'End the day and rest until morning')],
+        successChoices: localChoices,
+        rejectionChoices: localChoices,
       },
       {
         id: 'rest-until-morning', intent: s('结束今天并休息到清晨', 'end the day and rest until morning'),
@@ -89,8 +91,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         requirements: [],
         effects: [{ type: 'stat', id: 'energy', delta: 36 }, { type: 'clock-add', minutes: 600 }, { type: 'fact-add', id: 'exhaustion_recoveries', delta: 1 }, { type: 'session', ended: true, reason: s('你结束了今天的行动。地点、人物和约定都已保存；下次回来时，从休息后的清晨继续。', 'You end the day. Places, people, and promises are saved; the next visit begins after your morning rest.') }],
         successText: s('你不再追赶今晚剩下的安排，找到能避风的地方休息。睡意很快盖过远处的声响。', 'You stop chasing the rest of tonight’s plans and find shelter from the wind. Sleep soon covers the distant sounds.'),
-        successChoices: [s('清晨查看新的工作', 'Check the morning job board'), s('清晨去月线车站', 'Go to the Moonline station in the morning'), s('清晨拜访认识的人', 'Visit someone you know in the morning')],
-        rejectionChoices: [s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'), s('放弃当前行动，去最近的公共休息处', 'Abandon the current action and reach the nearest public rest area'), s('结束今天，休息到清晨', 'End the day and rest until morning')],
+        successChoices: localChoices,
+        rejectionChoices: localChoices,
       },
       {
         id: 'local-shift', intent: s('完成一份当地短工', 'complete a local shift'),
@@ -99,7 +101,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         effects: [{ type: 'stat', id: 'energy', delta: -10 }, { type: 'stat', id: 'coin', delta: 9 }, { type: 'stat', id: 'renown', delta: 2 }, { type: 'clock-add', minutes: 90 }, { type: 'fact-add', id: 'jobs_completed', delta: 1 }],
         successText: s('你接下一份九十分钟的短工。活不轻松，但工钱当场结清；附近的人也开始认得你。', 'You take a ninety-minute local shift. The work is tiring, but you are paid on the spot, and a few people now recognize you.'),
         successChoices: localChoices,
-        rejectionChoices: [s('花四枚钱币吃一顿热饭', 'Spend four coin on a hot meal'), s('找个安静角落休息', 'Rest somewhere quiet'), s('问熟人能不能帮忙', 'Ask someone you know for help')],
+        rejectionChoices: localChoices,
       },
       {
         id: 'hot-meal', intent: s('吃一顿热饭', 'eat a hot meal'),
@@ -108,7 +110,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         effects: [{ type: 'stat', id: 'coin', delta: -4 }, { type: 'stat', id: 'energy', delta: 12 }, { type: 'clock-add', minutes: 35 }, { type: 'fact-add', id: 'meals_eaten', delta: 1 }],
         successText: s('你吃完一碗冒着热气的炖菜，坐到双手不再发冷才起身。', 'You finish a bowl of hot stew and stay seated until your hands stop feeling cold.'),
         successChoices: localChoices,
-        rejectionChoices: [s('找一份能立刻结钱的短工', 'Find a job that pays immediately'), s('向认识的人说明情况', 'Explain the situation to someone you know'), s('不花钱休息一会儿', 'Rest for a while without spending')],
+        rejectionChoices: localChoices,
       },
       {
         id: 'overnight-room', intent: s('住一晚并保存', 'stay overnight and save'),
@@ -116,8 +118,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         requirements: [{ type: 'stat', id: 'coin', min: 10, reason: s('房费是十枚钱币，你现在付不起。', 'The room costs ten coin, which you cannot afford yet.') }],
         effects: [{ type: 'stat', id: 'coin', delta: -10 }, { type: 'stat', id: 'energy', delta: 28 }, { type: 'clock-add', minutes: 660 }, { type: 'fact-add', id: 'nights_slept', delta: 1 }, { type: 'session', ended: true, reason: s('你关上房门。今晚的地点、人物和约定都已保存；下次回来时，从清晨继续。', 'You close the door. Tonight’s places, people, and promises are saved; the next visit begins in the morning.') }],
         successText: s('热水、干床单和一扇能锁上的门，让这一天终于停了下来。', 'Hot water, dry sheets, and a door that locks finally bring the day to a stop.'),
-        successChoices: [s('清晨查看新的工作', 'Check the morning job board'), s('清晨去月线车站', 'Go to the Moonline station in the morning'), s('清晨拜访认识的人', 'Visit someone you know in the morning')],
-        rejectionChoices: [s('再找一份短工', 'Take another short job'), s('只买一顿热饭', 'Buy only a hot meal'), s('在公共休息处过夜', 'Use the public rest area')],
+        successChoices: localChoices,
+        rejectionChoices: localChoices,
       },
       {
         id: 'carriage-rest', intent: s('在月线车厢休息', 'rest in the Moonline carriage'),
@@ -125,8 +127,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         requirements: [{ type: 'map', nodeId: 'moonline-carriage', reason: s('你得先上月线，才能在车厢里休息。', 'You need to board the Moonline before you can rest in its carriage.') }],
         effects: [{ type: 'stat', id: 'energy', delta: 8 }, { type: 'clock-add', minutes: 45 }, { type: 'fact-add', id: 'carriage_rests', delta: 1 }],
         successText: s('你靠着温热的车窗闭了一会儿眼。列车没有停，但肩膀终于放松下来。', 'You close your eyes against the warm window. The train keeps moving, but the tension leaves your shoulders.'),
-        successChoices: [s('在下一站下车', 'Get off at the next stop'), s('问乘务员下一站有什么', 'Ask the steward about the next stop'), s('继续留在车厢', 'Stay in the carriage')],
-        rejectionChoices: [s('前往月线车站', 'Head to the Moonline station'), s('在原地找地方休息', 'Find somewhere to rest here'), s('继续眼前的事', 'Continue what you were doing')],
+        successChoices: localChoices,
+        rejectionChoices: localChoices,
       },
       ...[
         ['silverleaf-vineyard', s('银叶葡萄丘', 'Silverleaf Vineyard'), s('独自买票去银叶葡萄丘', 'buy a ticket to Silverleaf Vineyard')],
@@ -146,8 +148,8 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         ],
         effects: [{ type: 'stat' as const, id: 'coin', delta: -3 }, { type: 'stat' as const, id: 'energy', delta: -2 }, { type: 'clock-add' as const, minutes: 55 }, { type: 'map' as const, nodeId }],
         successText: s(`你买好车票，先回到月台。列车关门后，旧地点的灯从湿玻璃上退远；再次开门时，${label}已经在外面。`, `You buy a ticket and return to the platform. The old lights recede across the wet glass; when the doors open again, ${label} is outside.`),
-        successChoices: [s(`看看${label}的工作`, `Look for work in ${label}`), s(`找个人问问${label}的近况`, `Ask someone what is happening in ${label}`), s('先找地方休息', 'Find somewhere to rest first')] as [string, string, string],
-        rejectionChoices: [s('找一份短工', 'Look for a short job'), s('找地方休息', 'Find somewhere to rest'), s('继续探索当前地点', 'Keep exploring the current place')] as [string, string, string],
+        successChoices: localChoices,
+        rejectionChoices: localChoices,
       })),
     ],
   }
@@ -221,6 +223,29 @@ function make(locale: Locale): StoryCartridge {
     imageCharacterId: 'mira-voss',
   }
 
+  const safeLocalChoices = [
+    s('找一份短工', 'Look for a short job'),
+    s('吃一顿热饭', 'Get something to eat'),
+    s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'),
+  ]
+  const choicesCommand = (choices = safeLocalChoices) => `[choices: ${choices.map((choice) => `"${choice}"`).join('|')}]`
+  const localSideTurn = (
+    action: string,
+    location: string,
+    body: string,
+    options: { characterIds?: string[]; destination?: string; connectedTo?: string; choices?: string[] } = {},
+  ): NonNullable<StoryCartridge['deterministicChoiceTurns']>[number] => {
+    const destination = options.destination ?? location
+    const transition = options.destination
+      ? `\n[map_update: new_location="${options.destination}" connected_to="${options.connectedTo ?? location}"]`
+      : ''
+    return {
+      action,
+      when: { locations: [location], ...(options.characterIds ? { characterIds: options.characterIds } : {}) },
+      turn: { match: [], content: `${body}${transition}\n[scene_location: location="${destination}"]\n${choicesCommand(options.choices)}` },
+    }
+  }
+
   const deterministicChoiceTurns: NonNullable<StoryCartridge['deterministicChoiceTurns']> = [
     {
       action: s('帮媛夕把木箱送上月线', 'Help Mira load the crate onto the Moonline'),
@@ -241,6 +266,61 @@ function make(locale: Locale): StoryCartridge {
     { action: s('帮塞莱斯特试场', 'Help Celeste check the dawn performance space'), when: { locations: [s('潮汐群岛', 'Tidal Islands')], characterIds: ['celeste-ardin'] }, turn: v1Outcomes[4] },
     { action: s('接受塞莱斯特下一站的布台工作', "Take Celeste's staging job at the next market"), when: { locations: [s('潮汐群岛', 'Tidal Islands')], characterIds: ['celeste-ardin'] }, turn: v1Outcomes[5] },
   ]
+
+  deterministicChoiceTurns.push(
+    ...(
+      zh
+        ? [
+            localSideTurn('拿短工报酬后留在码头', '灯湾码头', '你收好已经结清的短工报酬，明确不跟随木箱上车。媛夕接受这个决定；灯湾码头仍有短工、热饭和公共长凳，没有替你新增承诺。', { characterIds: ['mira-voss'] }),
+            localSideTurn('问媛夕这些种子有什么用', '灯湾码头', '媛夕把一枚种荚托在掌心。它会顺着月光改变生长方向；她正把这一批送去银叶葡萄丘，比较雨后葡萄藤的反应。她确认木箱仍等着装上末班月线。', { characterIds: ['mira-voss'], choices: ['帮媛夕把木箱送上月线', ...safeLocalChoices.slice(0, 2)] }),
+            {
+              action: '沿葡萄行找还在剪枝的人',
+              when: { locations: ['银叶葡萄丘'], characterIds: ['mira-voss'] },
+              turn: { match: [], content: dynamicDebut.replace(/\[choices:[^\n]+\]\s*$/u, choicesCommand()) },
+            },
+            localSideTurn('收好钱币，做完就走', '灯湾码头', '你确认上一回合的收入已经记录，没有接下罗温后续的地图差事。路线箱重新扣紧，灯湾码头仍有短工、热饭和可以歇脚的地方。', { characterIds: ['rowan-hale'] }),
+            localSideTurn('问罗温哪条夜班路线最缺人', '灯湾码头', '罗温核对招工牌，说明今晚各站的缺口会分别贴在本地告示上。询问不会替你接受工作，也不会提前获得报酬；当前码头仍有可当场确认的短工、热饭和休息处。', { characterIds: ['rowan-hale'] }),
+            localSideTurn('留在灯湾继续找短工', '灯湾码头', '你告诉罗温这次不随地图上车，留在灯湾查看本地招工牌。他接受你的决定；新的工作只有在你明确接受并完成后才会结算。', { characterIds: ['rowan-hale'] }),
+            localSideTurn('告诉罗温你今晚只想休息', '远灯研修院', '你把界限说清楚：今晚不再接新差事。罗温没有劝你改变主意，只指出客房、食堂和仍亮着灯的短工告示。', { characterIds: ['rowan-hale'] }),
+            localSideTurn('收好钱币，离开舞台', '杯影夜市', '你确认上一回合的收入已经记录，和塞莱斯特说明这次搬运到此结束。你离开舞台边，杯影夜市的食摊、短工牌和长凳仍在营业。', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('问她演出为什么突然停了', '杯影夜市', '塞莱斯特检查潮湿的琴弦，告诉你雨水让音准失稳，必须等弦线干燥后才能继续。她没有要求你留下；夜市里仍有别的短工和休息处。', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('留在夜市找其他演出工作', '杯影夜市', '你留在杯影夜市询问下一场演出的临时工作。摊主把搬运、清场和布台三类告示指给你看，报酬都只在工作完成后结清。', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('到群岛后自己先找工作', '月线车厢', '你和塞莱斯特约好到站后各自行动。车门在潮汐群岛打开时，你先走向码头的短工告示，没有替自己预领任何报酬。', { characterIds: ['celeste-ardin'], destination: '潮汐群岛', connectedTo: '月线车厢' }),
+            localSideTurn('去码头找修网的短工', '潮汐群岛', '你在潮汐群岛码头查看修网告示。工头说明这是普通短工，只有明确接下并完成后才结算；当前没有替你提前增加钱币。', { characterIds: ['celeste-ardin'] }),
+          ]
+        : [
+            localSideTurn('Take the short-job pay and stay at the quay', 'Lantern Quay', 'You keep the pay already settled and decline the onward trip. Mira accepts the boundary; the quay still has shift notices, hot food, and public benches.', { characterIds: ['mira-voss'] }),
+            localSideTurn('Ask Mira what the seeds are used for', 'Lantern Quay', 'Mira rests one seed case in her palm. It turns with moonlight, and she is taking this batch to Silverleaf Vineyard to compare the vines after rain. The crate still needs to reach the last Moonline.', { characterIds: ['mira-voss'], choices: ['Help Mira load the crate onto the Moonline', ...safeLocalChoices.slice(0, 2)] }),
+            localSideTurn('Ask the steward whether the train needs more help', 'Moonline Carriage', 'The steward checks the carriage list and confirms that no urgent shift remains onboard. The completed crate job is already settled; you may look for ordinary work, food, or rest.', { characterIds: ['mira-voss'] }),
+            localSideTurn('Take the coin and get off alone at the next stop', 'Moonline Carriage', 'You keep the pay already settled and tell Mira you will leave the train alone. When the doors open at Silverleaf Vineyard, you step onto the wet platform without creating another obligation.', { characterIds: ['mira-voss'], destination: 'Silverleaf Vineyard', connectedTo: 'Moonline Carriage' }),
+            localSideTurn('Ask for overnight work at the lit field house', 'Silverleaf Vineyard', 'The field-house keeper confirms that no overnight post is guaranteed, but points out ordinary repair shifts posted for the vineyard. Pay will be settled only after completed work.', { characterIds: ['mira-voss'] }),
+            {
+              action: 'Follow the sound of pruning shears into the vine rows',
+              when: { locations: ['Silverleaf Vineyard'], characterIds: ['mira-voss'] },
+              turn: { match: [], content: dynamicDebut.replace(/\[choices:[^\n]+\]\s*$/u, choicesCommand()) },
+            },
+            localSideTurn('Finish the cup and travel alone tomorrow', 'Silverleaf Vineyard', 'You finish the cup and tell Mira that tomorrow you will choose your own route. She accepts the boundary; nothing is charged or promised on your behalf.', { characterIds: ['mira-voss'] }),
+            localSideTurn('Pocket the coin and leave after the shift', 'Lantern Quay', 'You put away the pay already settled and decline Rowan’s next map errand. The route case closes, and the quay’s ordinary work, food, and rest remain available.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Ask Rowan which night route needs workers', 'Lantern Quay', 'Rowan checks the board and explains that tonight’s openings are posted separately at each stop. No job is accepted and no pay is granted until you choose and complete one.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Stay in Lantern Quay and find more work', 'Lantern Quay', 'You stay at Lantern Quay and read the current shift board. Hauling and sorting are available, with pay due only after the work is completed.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Rest against the carriage window', 'Moonline Carriage', 'You rest against the warm carriage window until your shoulders loosen. The train continues along its confirmed route while ordinary choices remain open.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Get off first when the train arrives', 'Moonline Carriage', 'You tell Rowan you will step off first. When the train reaches Far Lantern Institute, you leave the carriage and wait beneath the workshop lamps.', { characterIds: ['rowan-hale'], destination: 'Far Lantern Institute', connectedTo: 'Moonline Carriage' }),
+            localSideTurn('Visit the workshops that are still open', 'Far Lantern Institute', 'You check the workshops that still have lamps on. The posted work is ordinary repair and cleanup; no task or pay is assigned until you accept one.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Tell Rowan you only need a room tonight', 'Far Lantern Institute', 'You tell Rowan that lodging, not another route, is your priority. He points out the canteen, the guest rooms, and the public rest area without making a decision for you.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Take the pay and choose your own route', 'Far Lantern Institute', 'You keep the pay already settled and tell Rowan you will choose your own route. He accepts the decision, and the institute’s ordinary options remain open.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Tell Rowan you only want to rest tonight', 'Far Lantern Institute', 'You tell Rowan that you will not take another assignment tonight. He respects the boundary and points out food, benches, and the remaining public notices.', { characterIds: ['rowan-hale'] }),
+            localSideTurn('Pocket the coin and leave the stage', 'Cupshadow Market', 'You keep the pay already settled and confirm that the stage job is finished. Celeste accepts the goodbye; the market’s food, benches, and other shifts remain open.', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('Ask why the performance stopped', 'Cupshadow Market', 'Celeste checks the damp strings and explains that rain pulled the instrument out of tune. She must let it dry before playing again, and does not require you to wait.', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('Stay at the market and find other stage work', 'Cupshadow Market', 'You remain at Cupshadow Market and inspect the next stage notices. Hauling, cleanup, and setup are listed, with pay due only after completed work.', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('Ask what the dawn job on the islands pays', 'Cupshadow Market', 'Celeste explains that the island organizer settles pay after setup is finished. Asking does not accept the job or credit any coin.', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('Look for your own work after reaching the islands', 'Moonline Carriage', 'You and Celeste agree to separate after arrival. When the doors open at the Tidal Islands, you head first toward the landing’s public work board.', { characterIds: ['celeste-ardin'], destination: 'Tidal Islands', connectedTo: 'Moonline Carriage' }),
+            localSideTurn('Take a net-mending job at the landing', 'Tidal Islands', 'You ask about the net-mending shift at the landing. The foreman confirms that it is ordinary paid work and will settle only after completion.', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('Walk the exposed tide flats alone', 'Tidal Islands', 'You tell Celeste you will walk the exposed tide flats alone. She points out the safe markers, and you keep the choice within the visible shore instead of inventing a new route.', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('Stay on the islands for net-mending work', 'Tidal Islands', 'You decide to remain on the islands and inspect the net-mending board. No shift or payment is committed until you take and finish the work.', { characterIds: ['celeste-ardin'] }),
+            localSideTurn('Say goodbye after the dawn concert', 'Tidal Islands', 'After the dawn concert, you tell Celeste that you will continue alone. She accepts the goodbye; no hidden promise or party change is added.', { characterIds: ['celeste-ardin'] }),
+          ]
+    ),
+  )
 
   return {
     schemaVersion: 1, id: 'wanderlight', locale, coverImage, entryImage,

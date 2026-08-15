@@ -9,7 +9,7 @@ import { resolveCartridge } from './cartridges'
 import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { canonicalizePaymentMetadata, repairKnownPaymentGap, validatePaymentConsistency } from './engine/paymentConsistency'
-import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
+import { canCommitDisplayedChoiceWithoutGeneratedReplies, canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from './engine/turnConsistency'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
 import { buildDangerDirective, normalizeDangerState } from './engine/dangerDirector'
 import { activeStatFloorRule, domainOwnsDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
@@ -350,6 +350,15 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
             ...(mode === 'demo' ? [] : validateTurnConsistency(base, parsed, activeCartridge, result.imagePrompt)),
           ]
           if (remaining.length) {
+            if (canCommitDisplayedChoiceWithoutGeneratedReplies(base, activeCartridge, normalizedAction, remaining)) {
+              commit((current) => applyParsedScene(
+                localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
+                result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId,
+              ))
+              setPendingAction('')
+              setProgress(null)
+              return
+            }
             commit((current) => applyConsistencyRecovery(localizeKnownState(current, cartridge, activeCartridge), activeCartridge, normalizedAction))
             setPendingAction('')
             setProgress(null)

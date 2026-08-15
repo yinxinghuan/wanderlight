@@ -150,13 +150,13 @@ export type DomainEffect =
   | { type: 'clock'; value: string }
   | { type: 'clock-add'; minutes: number }
   | { type: 'session'; ended: boolean; reason?: string }
-export interface DomainActionRule { id: string; intent: string; match: string[]; requirements: DomainRequirement[]; effects: DomainEffect[]; successText: string; successChoices: [string, string, string]; rejectionChoices?: [string, string, string] }
+export interface DomainActionRule { id: string; intent: string; match: string[]; requirements: DomainRequirement[]; effects: DomainEffect[]; successText: string; successChoices: string[]; rejectionChoices?: string[] }
 export interface DomainDerivedItemMetric { itemId: string; metricId: string; label: string; factId: string; maximum: number; mode: 'remaining-from-used' }
 export type DomainDerivedFact =
   | { factId: string; mode: 'owned-item-count'; itemIds: string[] }
   | { factId: string; mode: 'owned-item-threshold'; itemIds: string[]; threshold: number }
 export interface StoryDomainRules { rules: DomainActionRule[]; derivedItemMetrics?: DomainDerivedItemMetric[]; derivedFacts?: DomainDerivedFact[] }
-export interface DomainActionResolution { status: 'accepted' | 'rejected'; ruleId: string; intent: string; effects: DomainEffect[]; reasons: string[]; successText: string; successChoices: [string, string, string] }
+export interface DomainActionResolution { status: 'accepted' | 'rejected'; ruleId: string; intent: string; effects: DomainEffect[]; reasons: string[]; successText: string; successChoices: string[] }
 
 export interface JobContract {
   id: string

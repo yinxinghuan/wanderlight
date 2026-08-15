@@ -15,6 +15,7 @@
     "test:payment": "TMPDIR=/private/tmp tsx public-tests/payment-consistency.ts",
     "test:turn": "TMPDIR=/private/tmp tsx public-tests/turn-consistency.ts",
     "test:deterministic-choices": "TMPDIR=/private/tmp tsx public-tests/deterministic-choice-turns.ts",
+    "test:domain": "TMPDIR=/private/tmp tsx public-tests/domain-choice-availability.ts",
     "test:image-director": "TMPDIR=/private/tmp tsx public-tests/image-director.ts",
     "test:resume": "TMPDIR=/private/tmp tsx public-tests/reading-anchor.ts",
     "test:audio": "TMPDIR=/private/tmp tsx public-tests/audio-synth.ts",

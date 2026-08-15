@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { wanderlight, wanderlightEn } from '../src/story/cartridges/wanderlight'
 import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from '../src/story/engine/authoredTurns'
+import { resolveDomainAction } from '../src/story/engine/domainRules'
 import { canonicalizePaymentMetadata, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
 import { applyConsistencyRecovery, applyParsedScene, createInitialSave, restoreDeterministicRecoveryChoice } from '../src/story/engine/reducer'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
@@ -32,7 +33,25 @@ const routes = [
 
 for (const route of routes) {
   let save = createInitialSave(route.cartridge)
-  for (const action of route.actions) save = play(save, route.cartridge, action)
+  for (const action of route.actions) {
+    for (const choice of save.choices) {
+      const turn = resolveDeterministicOpeningTurn(save, route.cartridge, choice.label)
+        ?? resolveDeterministicChoiceTurn(save, route.cartridge, choice.label)
+      const domain = resolveDomainAction(save, route.cartridge, choice.label)
+      assert.ok(turn || domain, `${route.cartridge.locale}: displayed authored choice has no execution owner: ${choice.label}`)
+      if (turn) {
+        const side = play(save, route.cartridge, choice.label)
+        for (const nextChoice of side.choices) {
+          assert.ok(
+            resolveDeterministicChoiceTurn(side, route.cartridge, nextChoice.label)
+              || resolveDomainAction(side, route.cartridge, nextChoice.label),
+            `${route.cartridge.locale}: deterministic side result exposes an unowned choice: ${nextChoice.label}`,
+          )
+        }
+      }
+    }
+    save = play(save, route.cartridge, action)
+  }
   assert.equal(save.location, route.destination)
   assert.equal(save.stats.coin, route.coin)
   assert.equal(save.sessionEnded, true)
@@ -51,5 +70,14 @@ assert.ok(resolveDeterministicChoiceTurn(restored, wanderlight, restored.choices
 mira = play(restored, wanderlight, restored.choices[0]!.label)
 assert.equal(mira.location, '月线车厢')
 assert.equal(mira.stats.coin, 14)
+
+const rowanOffer = play(createInitialSave(wanderlight), wanderlight, '接下乘务员的夜班工作')
+const rowanSideAction = '收好钱币，做完就走'
+const rowanRecovery = applyConsistencyRecovery(rowanOffer, wanderlight, rowanSideAction)
+const restoredRowanSide = restoreDeterministicRecoveryChoice(rowanRecovery, wanderlight)
+assert.equal(restoredRowanSide.choices[0]?.label, rowanSideAction, 'legacy recovery restores a newly governed side choice')
+const completedRowanSide = play(restoredRowanSide, wanderlight, rowanSideAction)
+assert.equal(completedRowanSide.blocks.some((block) => block.id === `consistency-recovery-${completedRowanSide.scene}`), false)
+assert.equal(completedRowanSide.choices.every((choice) => resolveDomainAction(completedRowanSide, wanderlight, choice.label)?.status === 'accepted'), true)
 
 console.log('deterministic choice turn tests passed')

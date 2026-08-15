@@ -3,7 +3,7 @@ import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
 import { createInitialDangerState, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
-import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, statFloorChoices, syncDomainDerivedState } from './domainRules'
+import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
 import { resolveDeterministicChoiceTurn } from './authoredTurns'
 
@@ -752,8 +752,12 @@ export function applyParsedScene(
   // Ordinary scenes must remain playable even when an AI response omits or
   // truncates its machine-readable choices. A real checkpoint may still use
   // the dedicated resume action supplied by the Composer.
-  if (!next.sessionEnded && next.choices.length) {
-    next.choices = filterGroundedChoices(next.choices, { ...next, blocks: [...next.blocks, ...effects] }, cartridge, [...parsed.blocks, ...effects])
+  if (next.choices.length) {
+    const textGrounded = new Set(filterGroundedChoices(next.choices, { ...next, blocks: [...next.blocks, ...effects] }, cartridge, [...parsed.blocks, ...effects]).map((choice) => choice.label))
+    next.choices = next.choices.filter((choice) => {
+      const domain = resolveDomainAction(next, cartridge, choice.label)
+      return domain ? domain.status === 'accepted' : textGrounded.has(choice.label)
+    })
   }
   if (!next.sessionEnded && next.choices.length === 0) next.choices = createRecoveryChoices(next, cartridge)
 

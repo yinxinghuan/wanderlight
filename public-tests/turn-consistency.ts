@@ -1,9 +1,9 @@
 import { listCartridges } from '../src/story/cartridges/index'
 import { decodeChoiceRecord, encodeChoiceRecord } from '../src/story/engine/choiceInput'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
-import { applyConsistencyRecovery, applyConsistencyRecoverySelection, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection } from '../src/story/engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyParsedScene, createImageBlock, createInitialSave, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection } from '../src/story/engine/reducer'
 import { upgradePendingSceneImagePrompts } from '../src/story/engine/imageDirector'
-import { canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
+import { canCommitDisplayedChoiceWithoutGeneratedReplies, canonicalizeTurnMetadata, repairKnownForestSceneDivergence, validateTurnConsistency } from '../src/story/engine/turnConsistency'
 import { canonicalizePaymentMetadata, validatePaymentConsistency } from '../src/story/engine/paymentConsistency'
 import { resolveDeterministicOpeningTurn } from '../src/story/engine/authoredTurns'
 import { t } from '../src/story/i18n'
@@ -192,6 +192,36 @@ ok(partialChoices?.type === 'choices', 'a strong grounded choice survives partia
 equal(partialChoices.choices.length, 1, 'a generic overlapping word cannot validate unknown objects')
 equal(partialChoices.choices[0], '帮忙搬码头边的箱子', 'the current-scene action remains')
 
+const rowanDefinition = cartridge.characters.find((character) => character.id === 'rowan-hale')!
+const semanticSave = {
+  ...initial,
+  location: '远灯研修院',
+  characters: [{ ...rowanDefinition, status: 'known' as const, origin: 'cartridge' as const, updatedAtScene: 1 }],
+  map: initial.map.map((node) => ({ ...node, current: node.id === 'far-lantern-institute', visited: node.id === 'far-lantern-institute' ? true : node.visited })),
+}
+const semanticQualifiers = parseStoryProtocol(`罗温放下地图。广播刚刚确认末班月线取消；你们仍在远灯研修院等待后续通知。
+[scene_location: location="远灯研修院"]
+[choices: "询问罗温关于末班月线取消的具体情况"|"决定留在远灯研修院，等待进一步消息"|"前往从未出现的霜港寻找伊芙"]`, 'zh')
+const semanticCanonical = canonicalizeTurnMetadata(semanticSave, semanticQualifiers, cartridge)
+const semanticChoices = semanticCanonical.parsed.commands.find((command) => command.type === 'choices')
+ok(semanticChoices?.type === 'choices', 'semantic qualifier fixture keeps a choice command')
+equal(semanticChoices.choices.length, 2, 'abstract Chinese qualifiers do not erase established people, events and places')
+ok(!semanticChoices.choices.some((choice) => choice.includes('霜港') || choice.includes('伊芙')), 'unknown named entities remain filtered')
+
+const sublocation = canonicalizeTurnMetadata(semanticSave, parseStoryProtocol(`你和罗温走进远灯研修院工坊，仍在研修院范围内。
+[scene_location: location="远灯研修院工坊"]
+[choices: "留在远灯研修院等待"]`, 'zh'), cartridge)
+ok(sublocation.parsed.commands.some((command) => command.type === 'scene_location' && command.location === '远灯研修院'), 'a named sublocation remains attached to its current authoritative map node')
+equal(validateTurnConsistency(semanticSave, sublocation.parsed, cartridge).length, 0, 'a current-node sublocation cannot create a false teleport recovery')
+
+const locallyExecutable = parseStoryProtocol(`灯湾码头的公开设施仍在运转。
+[scene_location: location="灯湾码头"]
+[choices: "找一份短工"|"吃一顿热饭"|"原地坐下，休息四十五分钟"]`, 'zh')
+const executableCanonical = canonicalizeTurnMetadata(initial, locallyExecutable, cartridge)
+const executableChoices = executableCanonical.parsed.commands.find((command) => command.type === 'choices')
+ok(executableChoices?.type === 'choices', 'locally executable choices keep their command')
+equal(executableChoices.choices.length, 3, 'accepted domain actions survive without brittle prose repetition')
+
 const omittedMapUpdate = parseStoryProtocol(`你穿过雨棚，走进杯影夜市。舞台旁的木箱已经搬到干燥处。
 [scene_location: location="杯影夜市"]
 [choices: "检查舞台旁的木箱"|"留在杯影夜市等待"]`, 'zh')
@@ -211,6 +241,19 @@ for (const openingCartridge of [listCartridges('zh')[0], listCartridges('en')[0]
   }
 }
 equal(resolveDeterministicOpeningTurn(initial, cartridge, '我想去一个没有出现过的太空港'), undefined, 'free input remains open and never gets mistaken for a deterministic button')
+
+ok(canCommitDisplayedChoiceWithoutGeneratedReplies(initial, cartridge, initial.choices[0].label, ['turn.requires_actionable_choices']), 'a displayed quick reply may commit a valid consequence even when the model loses every next reply')
+ok(canCommitDisplayedChoiceWithoutGeneratedReplies({ ...initial, choices: [], sessionEnded: true }, cartridge, cartridge.copy.continue, ['turn.requires_actionable_choices']), 'the visible continue control receives the same reply-only execution promise')
+const continueBase = { ...initial, choices: [], sessionEnded: true }
+const continueParsed = canonicalizeTurnMetadata(continueBase, parseStoryProtocol(`你继续留在灯湾码头整理行李。
+[scene_location: location="灯湾码头"]
+[choices: "寻找从未出现的森林王后"]`, 'zh'), cartridge).parsed
+const continueViolations = validateTurnConsistency(continueBase, continueParsed, cartridge)
+ok(canCommitDisplayedChoiceWithoutGeneratedReplies(continueBase, cartridge, cartridge.copy.continue, continueViolations), 'continue accepts the narrow reply-only failure after full validation')
+const continued = applyParsedScene(continueBase, continueParsed, cartridge, cartridge.copy.continue)
+ok(continued.choices.length >= 1 && !continued.blocks.some((block) => block.id.startsWith('consistency-recovery-')), 'continue commits its consequence and reducer-owned feasible choices without recovery')
+ok(!canCommitDisplayedChoiceWithoutGeneratedReplies(initial, cartridge, '我自己写的行动', ['turn.requires_actionable_choices']), 'free input does not inherit the displayed-choice execution promise')
+ok(!canCommitDisplayedChoiceWithoutGeneratedReplies(initial, cartridge, initial.choices[0].label, ['turn.scene_location_must_match_state']), 'a displayed choice cannot bypass state consistency')
 
 const legacyChoices = [
   { id: 'old-0', label: '观察灯湾码头的新变化' },

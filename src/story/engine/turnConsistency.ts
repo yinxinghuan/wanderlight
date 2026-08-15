@@ -1,5 +1,6 @@
 import { encodeChoiceRecord } from './choiceInput'
 import { filterGroundedChoices } from './continuity'
+import { resolveDomainAction } from './domainRules'
 import type { ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
 
 function clean(value: string): string {
@@ -44,8 +45,18 @@ export function canonicalizeTurnMetadata(
   trustedAuthored = false,
 ): { parsed: ParsedScene; imagePrompt?: string; discardedImage: boolean } {
   let commands = parsed.commands
-  const originalSceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
+  let originalSceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
   const hasMapUpdate = commands.some((command) => command.type === 'map_update')
+  if (!hasMapUpdate && originalSceneLocations.length === 1
+    && clean(originalSceneLocations[0].location) !== clean(save.location)
+    && clean(originalSceneLocations[0].location).includes(clean(save.location))) {
+    commands = commands.map((command) => command.type === 'scene_location'
+      ? { ...command, location: save.location }
+      : command.type === 'image_location' && clean(command.location).includes(clean(save.location))
+        ? { ...command, location: save.location }
+        : command)
+    originalSceneLocations = commands.filter((command): command is Extract<ParsedCommand, { type: 'scene_location' }> => command.type === 'scene_location')
+  }
   if (!hasMapUpdate && originalSceneLocations.length === 1 && clean(originalSceneLocations[0].location) !== clean(save.location)) {
     const destination = save.map.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
       ?? cartridge.initialMap.find((node) => clean(node.label) === clean(originalSceneLocations[0].location))
@@ -119,7 +130,7 @@ export function canonicalizeTurnMetadata(
           ? { ...node, current: true, visited: true, detail: mapUpdate.detail ?? node.detail, lore: mapUpdate.lore ?? node.lore, facts: mapUpdate.facts ?? node.facts }
           : { ...node, current: false })
         : save.map
-      const grounded = filterGroundedChoices(candidates, {
+      const candidateSave = {
         ...save,
         location,
         map: groundedMap,
@@ -131,7 +142,12 @@ export function canonicalizeTurnMetadata(
           })),
         ],
         blocks: [...save.blocks, ...parsed.blocks],
-      }, cartridge, parsed.blocks).map((choice) => choice.label)
+      }
+      const textGrounded = new Set(filterGroundedChoices(candidates, candidateSave, cartridge, parsed.blocks).map((choice) => choice.label))
+      const grounded = candidates.filter((choice) => {
+        const domain = resolveDomainAction(candidateSave, cartridge, choice.label)
+        return domain ? domain.status === 'accepted' : textGrounded.has(choice.label)
+      }).map((choice) => choice.label)
       if (grounded.length !== command.choices.length || grounded.some((label, index) => label !== command.choices[index])) {
         commands = commands.map((entry, index) => index === choiceIndex ? { type: 'choices' as const, choices: grounded } : entry)
       }
@@ -146,6 +162,20 @@ function validChoices(parsed: ParsedScene): string[] {
   if (command?.type !== 'choices') return []
   const labels = command.choices.map((label) => label.trim()).filter((label) => label.length >= 2 && label.length <= 96)
   return labels.length >= 1 && labels.length <= 5 && new Set(labels).size === labels.length ? labels : []
+}
+
+export function canCommitDisplayedChoiceWithoutGeneratedReplies(
+  save: Pick<StorySave, 'choices' | 'sessionEnded'>,
+  cartridge: Pick<StoryCartridge, 'copy'>,
+  action: string,
+  violations: string[],
+): boolean {
+  const selected = clean(action)
+  return Boolean(selected)
+    && (save.choices.some((choice) => clean(choice.label) === selected)
+      || (save.sessionEnded && clean(cartridge.copy.continue) === selected))
+    && violations.length > 0
+    && violations.every((violation) => violation === 'turn.requires_actionable_choices')
 }
 
 function stalePlaceChoice(choice: string, location: string, save: StorySave): boolean {

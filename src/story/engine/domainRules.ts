@@ -272,13 +272,13 @@ export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge
 export function domainDirectiveContract(resolution?: DomainActionResolution): string {
   if (!resolution) return ''
   if (resolution.status === 'rejected') return `
-LOCAL DOMAIN ADJUDICATION IS AUTHORITATIVE. The attempted action maps to intent "${resolution.intent}" but is illegal now: ${resolution.reasons.join(' / ')}. Narrate the concrete in-world obstruction without turning it into success. Do not emit any state-changing protocol command. End with three currently feasible choices.`
+LOCAL DOMAIN ADJUDICATION IS AUTHORITATIVE. The attempted action maps to intent "${resolution.intent}" but is illegal now: ${resolution.reasons.join(' / ')}. Narrate the concrete in-world obstruction without turning it into success. Do not emit any state-changing protocol command. End with the currently feasible choices.`
   const effectSummary = resolution.effects.map((effect) => JSON.stringify(effect)).join(' | ')
   return `
-LOCAL DOMAIN ADJUDICATION IS AUTHORITATIVE. The attempted action maps to intent "${resolution.intent}" and has already been accepted. The local reducer, not you, owns this entire turn's persistent state transaction: ${effectSummary}. Narrate the visible consequence consistently. Do not emit widget, fact, inventory, map, party, encounter, state, clock, ending, or session commands. End with three feasible choices.`
+LOCAL DOMAIN ADJUDICATION IS AUTHORITATIVE. The attempted action maps to intent "${resolution.intent}" and has already been accepted. The local reducer, not you, owns this entire turn's persistent state transaction: ${effectSummary}. Narrate the visible consequence consistently. Do not emit widget, fact, inventory, map, party, encounter, state, clock, ending, or session commands. End with the feasible choices.`
 }
 
 export function domainDemoContent(resolution: DomainActionResolution): string {
   const body = resolution.status === 'accepted' ? resolution.successText : resolution.reasons.join('；')
-  return `${body}\n[choices: "${resolution.successChoices[0]}"|"${resolution.successChoices[1]}"|"${resolution.successChoices[2]}"]`
+  return `${body}\n[choices: ${resolution.successChoices.slice(0, 5).map((choice) => `"${choice.replaceAll('"', '\\"')}"`).join('|')}]`
 }

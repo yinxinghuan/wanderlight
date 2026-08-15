@@ -12,9 +12,9 @@ const parsed = parseStoryProtocol(`码头的公告牌滚动着最新的月线发
 
 你现在可以：
 
-- 询问招工点的工作人员具体搬运活信息
-- 直接报名参加码头的搬运工作
-- 观察周围等待月线的其他乘客
+- 询问码头工作人员的搬运工作信息
+- 查看公告牌上的月线发车时间
+- 留在灯湾码头等待
 
 [choices: "观察灯湾码头的薪资变化"|"追查今晚房钱的线索"|"换一种方式处理当前局面"]`, 'zh')
 
@@ -22,8 +22,8 @@ const choiceCommands = parsed.commands.filter((command) => command.type === 'cho
 equal(choiceCommands.length, 2, 'both model choice sets remain available for deterministic precedence')
 const authoritative = choiceCommands.at(-1)
 ok(authoritative?.type === 'choices', 'visible tail choices become authoritative')
-equal(authoritative.choices[0], '询问招工点的工作人员具体搬运活信息', 'visible choice 01 wins')
-ok(!parsed.blocks.some((block) => /你现在可以|询问招工点/.test(block.text)), 'duplicate visible list is removed from prose')
+equal(authoritative.choices[0], '询问码头工作人员的搬运工作信息', 'visible choice 01 wins')
+ok(!parsed.blocks.some((block) => /你现在可以|询问码头工作人员/.test(block.text)), 'duplicate visible list is removed from prose')
 
 const next = applyParsedScene(initial, parsed, cartridge, '寻找码头工作')
 const record = next.blocks.find((block) => block.id === `choices-${next.scene}`)
