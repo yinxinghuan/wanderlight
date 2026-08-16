@@ -1,4 +1,4 @@
-import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVisualIdentity, type DangerDirective, type DomainActionResolution, type ImageBlockStatus, type MapNode, type ParsedCommand, type ParsedScene, type SceneImageSubject, type StoryBlock, type StoryCartridge, type StoryCharacter, type StorySave } from '../types'
+import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVisualIdentity, type DangerDirective, type DomainActionResolution, type ImageBlockStatus, type MapNode, type ParsedCommand, type ParsedScene, type PresetEventResolution, type SceneImageSubject, type StoryBlock, type StoryCartridge, type StoryCharacter, type StorySave } from '../types'
 import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
 import { contextualDangerChoiceLabels, createInitialDangerState, dangerDirectiveChoices, normalizeDangerState, settleDangerTurn } from './dangerDirector'
@@ -8,6 +8,7 @@ import { encodeChoiceRecord } from './choiceInput'
 import { resolveDeterministicChoiceTurn } from './authoredTurns'
 import { bindChoiceDestinations, inferActionDestination, mergeRouteHints, playerDeclaredLocationAlias, stableDynamicLocationId, validatedDynamicRouteHints } from './turnConsistency'
 import { characterIdentityConflict, hasVisibleCharacterDebut, hasVisiblePartyJoin, matchingCharacter, normalizedCharacterName } from './characterContinuity'
+import { presetEventRecoveryChoice, recordPresetEvent } from './presetEventDirector'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -36,6 +37,37 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
   }
   initial.choices = bindChoiceDestinations(initial.choices, initial, cartridge)
   return syncDomainDerivedState(initial, cartridge)
+}
+
+export function mergeAuthoredMapNodes(persisted: MapNode[] | undefined, cartridge: StoryCartridge): MapNode[] {
+  const initialPlaces = new Map(cartridge.initialMap.map((node) => [node.id, node]))
+  const mergeStrings = (authored?: string[], saved?: string[]) => {
+    const values = [...(authored ?? []), ...(saved ?? [])]
+    return values.length ? [...new Set(values)] : undefined
+  }
+  const persistedMap = (persisted ?? cartridge.initialMap).map((node) => {
+    const definition = initialPlaces.get(node.id)
+    return {
+      ...definition, ...node,
+      visited: node.visited ?? Boolean(node.current || node.id.startsWith('map-')),
+      detail: node.detail ?? definition?.detail,
+      lore: node.lore ?? definition?.lore,
+      facts: mergeStrings(definition?.facts, node.facts),
+      routeHints: mergeStrings(definition?.routeHints, node.routeHints),
+      capabilities: mergeStrings(definition?.capabilities, node.capabilities),
+    }
+  })
+  const persistedIds = new Set(persistedMap.map((node) => node.id))
+  const newlyAuthoredPlaces = cartridge.initialMap
+    .filter((node) => !persistedIds.has(node.id))
+    .map((node) => ({
+      ...node, current: false, visited: false,
+      lore: node.lore,
+      facts: node.facts ? [...node.facts] : undefined,
+      routeHints: node.routeHints ? [...node.routeHints] : undefined,
+      capabilities: node.capabilities ? [...node.capabilities] : undefined,
+    }))
+  return [...persistedMap, ...newlyAuthoredPlaces]
 }
 
 export function createChoiceRecordBlock(scene: number, choices: StorySave['choices']): StoryBlock {
@@ -301,12 +333,16 @@ function shortChoiceContext(value: string, maxLength: number): string {
 }
 
 export function createRecoveryChoices(
-  save: Pick<StorySave, 'scene' | 'location' | 'objective'> & Partial<Pick<StorySave, 'danger'>>,
+  save: Pick<StorySave, 'scene' | 'location' | 'objective'> & Partial<Pick<StorySave, 'danger' | 'map' | 'facts' | 'time'>>,
   cartridge: StoryCartridge,
 ): StorySave['choices'] {
   const location = shortChoiceContext(save.location, cartridge.locale === 'zh' ? 14 : 24)
   const objective = shortChoiceContext(save.objective, cartridge.locale === 'zh' ? 32 : 64).replace(/[。.!！?？；;]+$/u, '')
   const activeThreat = save.danger && save.danger.phase !== 'calm'
+  const presetEvent = !activeThreat && !objective && save.map && save.facts && save.time && save.danger
+    ? presetEventRecoveryChoice(save as Pick<StorySave, 'scene' | 'location' | 'map' | 'facts' | 'time' | 'objective' | 'decisionContext' | 'danger' | 'jobs'>, cartridge)
+    : undefined
+  if (presetEvent) return [presetEvent]
   const labels = activeThreat && cartridge.dangerDirector
     ? contextualDangerChoiceLabels(save.danger?.currentThreat, cartridge.dangerDirector.methods, cartridge.locale)
     : objective
@@ -713,6 +749,7 @@ export function applyParsedScene(
   dangerDirective?: DangerDirective,
   domainResolution?: DomainActionResolution,
   imageCharacterId?: string,
+  presetEventResolution?: PresetEventResolution,
 ): StorySave {
   const parsedCheckpoint = parsed.commands.some((command) => command.type === 'session_end')
   const activeDangerDirective = parsedCheckpoint || domainSuppressesDanger(domainResolution) ? undefined : dangerDirective
@@ -741,6 +778,7 @@ export function applyParsedScene(
   }
   delete next.facts.consistency_quarantined_action
   delete next.facts.consistency_quarantined_location
+  recordPresetEvent(next, presetEventResolution)
   const declaredAlias = playerDeclaredLocationAlias(actionId, cartridge.locale)
   if (declaredAlias) {
     const sourceNode = next.map.find((node) => node.current || node.label === save.location)
@@ -914,9 +952,16 @@ export function applyParsedScene(
   // the dedicated resume action supplied by the Composer.
   if (next.choices.length) {
     const textGrounded = new Set(filterGroundedChoices(next.choices, { ...next, blocks: [...next.blocks, ...effects] }, cartridge, [...parsed.blocks, ...effects]).map((choice) => choice.label))
+    const trustedDomainChoices = new Set(domainResolution?.status === 'accepted' && domainResolution.continuation === 'replace'
+      ? domainResolution.successChoices
+      : [])
+    const trustedPresetChoices = new Set(presetEventResolution
+      ? parsed.commands.find((command): command is Extract<ParsedCommand, { type: 'choices' }> => command.type === 'choices')?.choices ?? []
+      : [])
     next.choices = next.choices.filter((choice) => {
       const domain = resolveDomainAction(next, cartridge, choice.label)
-      return domain ? domain.status === 'accepted' : Boolean(inferActionDestination(next, cartridge, choice.label)) || textGrounded.has(choice.label)
+      const authored = resolveDeterministicChoiceTurn(next, cartridge, choice.label)
+      return domain ? domain.status === 'accepted' : trustedDomainChoices.has(choice.label) || trustedPresetChoices.has(choice.label) || Boolean(authored) || Boolean(inferActionDestination(next, cartridge, choice.label)) || textGrounded.has(choice.label)
     })
   }
   if (!next.sessionEnded && next.choices.length === 0) {
@@ -966,6 +1011,7 @@ export function applyParsedScene(
     ...(image.prompt ? [createImageBlock(`image-${next.scene}`, next.sceneLocation ?? next.location, image.prompt, 'queued', '', {
       source: image.source ?? 'director', reason: image.reason ?? 'cadence', promptVersion: String(SCENE_IMAGE_PROMPT_VERSION),
       playerVisible: image.playerVisible ? 'true' : 'false',
+      perspective: image.perspective ?? 'observer',
       ...(image.identityCharacterId ? { identityCharacterId: image.identityCharacterId } : {}),
     })] : []),
     ...(!next.sessionEnded && next.choices.length ? [createChoiceRecordBlock(next.scene, next.choices)] : []),

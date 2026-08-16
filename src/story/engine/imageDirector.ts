@@ -6,6 +6,16 @@ export interface SceneImageDecision {
   reason?: 'ai-proposal' | SceneImageTrigger | 'cadence'
   playerVisible?: boolean
   identityCharacterId?: string
+  perspective?: 'first-person' | 'observer'
+}
+
+function imageHash(value: string): number {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
 }
 
 function lastScheduledScene(save: StorySave): number {
@@ -149,9 +159,28 @@ function latestLocation(next: StorySave, parsed: ParsedScene): string {
 function playerIsVisible(parsed: ParsedScene, proposal?: string, subject?: SceneImageSubject): boolean {
   if (subject === 'player') return true
   if (subject === 'environment' || subject === 'others') return false
-  const shot = `${proposal ?? ''} ${visibleBeat(parsed)}`
+  // Second-person prose mentions “you” on almost every turn. That alone is
+  // not visual evidence that the protagonist belongs in frame.
+  const shot = proposal ?? ''
   if (/\b(no people|nobody|unoccupied|environment-only|object-only)\b|无人|空镜|纯环境|物品特写/i.test(shot)) return false
   return /\b(player protagonist|protagonist|player character|returning player|the player|traveler|wayfarer|adventurer|you)\b|玩家|主角|旅人|旅行者|冒险者|你/i.test(shot)
+}
+
+function firstPersonView(
+  next: StorySave,
+  parsed: ParsedScene,
+  reason: SceneImageTrigger | 'cadence',
+  proposal: string | undefined,
+  playerVisible: boolean,
+  hasIdentityOwner: boolean,
+): boolean {
+  if (playerVisible) return false
+  const shot = proposal ?? ''
+  if (/\b(first[- ]person|player[- ]eye|point[- ]of[- ]view|POV)\b|第一人称|主角视角|玩家视角/i.test(shot)) return true
+  if (/\b(third[- ]person|over[- ]the[- ]shoulder|wide establishing|full[- ]body protagonist)\b|第三人称|肩后|全身主角|环境建立镜头/i.test(shot)) return false
+  if (reason === 'character-expression' || hasIdentityOwner || reason === 'rare-item') return true
+  if (reason === 'new-location') return false
+  return imageHash(`${next.cartridgeId}|${next.scene}|${reason}|${visibleBeat(parsed)}`) % 2 === 0
 }
 
 function buildScenePrompt(
@@ -162,6 +191,7 @@ function buildScenePrompt(
   aiProposal?: string,
   playerVisible = false,
   identityCharacterId?: string,
+  firstPerson = false,
 ): string {
   const beat = visibleBeat(parsed) || next.objective
   const proposal = aiProposal?.replace(/\s+/g, ' ').trim().slice(0, 620)
@@ -174,8 +204,9 @@ function buildScenePrompt(
     `Latest visible story beat, which overrides older continuity hints: ${beat}.`,
     `Current location hint: ${latestLocation(next, parsed)}. Use it only when consistent with the latest visible beat; never drag an earlier location into a newer scene.`,
     `Mandatory art direction: ${direction}.`,
+    firstPerson ? 'FIRST-PERSON PLAYER-EYE VIEW. The camera is the protagonist’s eyes inside the current scene. Do not show the protagonist’s face, head, back, shoulders, silhouette, reflection, or full body, and do not use an over-the-shoulder third-person composition. Do not invent the protagonist’s hands; show them only when the latest visible story explicitly establishes them. Build the foreground from the other person’s gesture, a nearby object, a doorframe, work surface, or window edge.' : '',
     playerVisible ? 'The player protagonist is the dominant visible human in this frame and must be the same person performing the single main player action. Keep their face naturally readable and do not assign that action or identity to a companion, NPC, background figure or animal.' : '',
-    dialogueMoment ? `${dialogueMoment.character?.name ?? dialogueMoment.dialogue.speaker} is the one dominant visible adult. Use a medium close-up or chest-up reaction shot. Make ${dialogueMoment.expression ? `this expression visually specific: ${dialogueMoment.expression}` : 'the current expression legible through eyes, mouth, posture and one restrained hand gesture'}. Keep enough current-location background to preserve narrative context, and avoid a centered passport portrait.` : identityCharacterId ? 'Use a medium close-up or chest-up reaction shot. The named identity owner is the only clearly readable face; make their current emotion legible through eyes, mouth, posture and one restrained hand gesture. Keep enough current-location background to preserve narrative context, and avoid a centered passport portrait.' : '',
+    dialogueMoment ? `${dialogueMoment.character?.name ?? dialogueMoment.dialogue.speaker} is the one dominant visible adult seen from the protagonist’s position. Use a contextual medium close-up or chest-up reaction shot. Make ${dialogueMoment.expression ? `this expression visually specific: ${dialogueMoment.expression}` : 'the current expression legible through eyes, mouth, posture and one restrained hand gesture'}. Keep enough current-location background to preserve narrative context, and avoid a centered passport portrait.` : identityCharacterId ? 'Use a contextual medium close-up or chest-up reaction shot from the protagonist’s position. The named identity owner is the only clearly readable face; make their current emotion legible through eyes, mouth, posture and one restrained hand gesture. Keep enough current-location background to preserve narrative context, and avoid a centered passport portrait.' : '',
     'Compose one readable moment with one dominant action and at most two focal subjects. Choose a camera position, scale, lighting pattern and silhouette that differ from earlier images.',
     'Ignore all cover art and opening-scene imagery. Derive the depicted location, action, subjects, props and weather only from the primary shot brief and latest visible story beat.',
     'Show only people, objects, places and consequences established in the latest visible story. No montage, split screen, flash-forward, readable text, letters, logo, border, poster layout or UI.',
@@ -184,8 +215,9 @@ function buildScenePrompt(
 
 export function shouldUsePlayerImageReference(prompt: string): boolean {
   const explicitlyEmpty = /\b(no people|nobody|unoccupied|environment-only|object-only)\b|无人|空镜|纯环境|物品特写/i.test(prompt)
+  const firstPerson = /\b(first[- ]person|player[- ]eye|point[- ]of[- ]view|POV)\b|第一人称|主角视角|玩家视角/i.test(prompt)
   const playerVisible = /\b(player protagonist|protagonist|player character|returning player|the player|traveler|wayfarer|adventurer|you)\b|玩家|主角|旅人|旅行者|冒险者/i.test(prompt)
-  return playerVisible && !explicitlyEmpty
+  return playerVisible && !explicitlyEmpty && !firstPerson
 }
 
 export function upgradePendingSceneImagePrompts(save: StorySave, cartridge: StoryCartridge): StorySave {
@@ -204,14 +236,16 @@ export function upgradePendingSceneImagePrompts(save: StorySave, cartridge: Stor
     }
     const historical = { ...save, sceneLocation: block.text || save.sceneLocation || save.location }
     const visible = playerIsVisible(parsed)
+    const firstPerson = firstPersonView(historical, parsed, 'cadence', undefined, visible, false)
     changed = true
     return {
       ...block,
       data: {
         ...block.data,
-        prompt: buildScenePrompt(cartridge, historical, parsed, 'cadence', undefined, visible),
+        prompt: buildScenePrompt(cartridge, historical, parsed, 'cadence', undefined, visible, undefined, firstPerson),
         promptVersion: SCENE_IMAGE_PROMPT_VERSION,
         playerVisible: visible ? 'true' : 'false',
+        perspective: firstPerson ? 'first-person' : 'observer',
         status: block.data?.status === 'generating' ? 'queued' : block.data?.status ?? 'queued',
       },
     }
@@ -234,9 +268,11 @@ export function chooseSceneImage(
   // suggestion. It takes precedence over a generic AI environment proposal so
   // the resulting shot actually shows the speaker's readable expression.
   if (director && owner && director.guaranteedTriggers.includes('character-expression')) {
+    const firstPerson = firstPersonView(next, parsed, 'character-expression', undefined, false, Boolean(owner.character?.visualIdentity))
     return {
-      prompt: buildScenePrompt(cartridge, next, parsed, 'character-expression', undefined, false, owner.character?.visualIdentity ? owner.character.id : undefined),
+      prompt: buildScenePrompt(cartridge, next, parsed, 'character-expression', undefined, false, owner.character?.visualIdentity ? owner.character.id : undefined, firstPerson),
       source: 'director', reason: 'character-expression', playerVisible: false, identityCharacterId: owner.character?.visualIdentity ? owner.character.id : undefined,
+      perspective: firstPerson ? 'first-person' : 'observer',
     }
   }
 
@@ -246,12 +282,14 @@ export function chooseSceneImage(
     const identityOwner = imageSubject === 'others' && imageCharacterId
       ? next.characters.find((character) => character.id === imageCharacterId && character.visualIdentity)
       : undefined
+    const firstPerson = firstPersonView(next, parsed, 'cadence', proposal, visible, Boolean(identityOwner))
     return {
-      prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', proposal, visible, identityOwner?.id),
+      prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', proposal, visible, identityOwner?.id, firstPerson),
       source: 'ai',
       reason: 'ai-proposal',
       playerVisible: visible,
       identityCharacterId: identityOwner?.id,
+      perspective: firstPerson ? 'first-person' : 'observer',
     }
   }
 
@@ -259,15 +297,23 @@ export function chooseSceneImage(
   const visible = owner ? false : playerIsVisible(parsed, undefined, imageSubject)
   const triggers = detectTriggers(previous, next, parsed)
   const guaranteed = firstTrigger(triggers, director.guaranteedTriggers)
-  if (guaranteed) return { prompt: buildScenePrompt(cartridge, next, parsed, guaranteed, undefined, visible, owner?.character?.visualIdentity ? owner.character.id : undefined), source: 'director', reason: guaranteed, playerVisible: visible, identityCharacterId: owner?.character?.visualIdentity ? owner.character.id : undefined }
+  if (guaranteed) {
+    const identityCharacterId = owner?.character?.visualIdentity ? owner.character.id : undefined
+    const firstPerson = firstPersonView(next, parsed, guaranteed, undefined, visible, Boolean(identityCharacterId))
+    return { prompt: buildScenePrompt(cartridge, next, parsed, guaranteed, undefined, visible, identityCharacterId, firstPerson), source: 'director', reason: guaranteed, playerVisible: visible, identityCharacterId, perspective: firstPerson ? 'first-person' : 'observer' }
+  }
 
   const turnsSinceImage = next.scene - lastScheduledScene(previous)
   const soft = firstTrigger(triggers, director.softTriggers)
   if (soft && turnsSinceImage >= director.softCooldownTurns) {
-    return { prompt: buildScenePrompt(cartridge, next, parsed, soft, undefined, visible, owner?.character?.visualIdentity ? owner.character.id : undefined), source: 'director', reason: soft, playerVisible: visible, identityCharacterId: owner?.character?.visualIdentity ? owner.character.id : undefined }
+    const identityCharacterId = owner?.character?.visualIdentity ? owner.character.id : undefined
+    const firstPerson = firstPersonView(next, parsed, soft, undefined, visible, Boolean(identityCharacterId))
+    return { prompt: buildScenePrompt(cartridge, next, parsed, soft, undefined, visible, identityCharacterId, firstPerson), source: 'director', reason: soft, playerVisible: visible, identityCharacterId, perspective: firstPerson ? 'first-person' : 'observer' }
   }
   if (turnsSinceImage >= director.maxQuietTurns) {
-    return { prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', undefined, visible, owner?.character?.visualIdentity ? owner.character.id : undefined), source: 'director', reason: 'cadence', playerVisible: visible, identityCharacterId: owner?.character?.visualIdentity ? owner.character.id : undefined }
+    const identityCharacterId = owner?.character?.visualIdentity ? owner.character.id : undefined
+    const firstPerson = firstPersonView(next, parsed, 'cadence', undefined, visible, Boolean(identityCharacterId))
+    return { prompt: buildScenePrompt(cartridge, next, parsed, 'cadence', undefined, visible, identityCharacterId, firstPerson), source: 'director', reason: 'cadence', playerVisible: visible, identityCharacterId, perspective: firstPerson ? 'first-person' : 'observer' }
   }
   return {}
 }

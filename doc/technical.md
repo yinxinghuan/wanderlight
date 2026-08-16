@@ -17,10 +17,13 @@ src/
   shared/save/useGameSave.ts         # 平台存档和本地镜像
   story/StoryShell.tsx               # 入口、阅读流、选择、抽屉与详情界面
   story/story.less                   # 编辑水粉配套的 wayfarer UI 与响应式规则
-  story/cartridges/wanderlight.ts    # 双语世界、七区域规则、角色锚点和图片导演参数
+  story/cartridges/wanderlight.ts    # 双语世界、十二区域整合、领域规则和图片导演参数
+  story/cartridges/wanderlightWorldExpansion.ts # 五个新区域、五名预设角色、抵达入口、重逢与跨区导演规则
+  story/cartridges/wanderlightPresetEvents.ts # 12 地点 × 4 条双语预设事件及具体后续行动
   story/cartridges/wanderlightV1Content.ts   # 罗温/塞莱斯特的首次登场、工作、中转与重逢
   story/cartridges/wanderlightV1Outcomes.ts  # 三名核心角色的边界判断、同行与自然停止点
   story/engine/                      # 协议、reducer、领域规则、危险、连续性与图片导演
+    presetEventDirector.ts           # 空闲时的确定性事件轮换、选择解析与使用记录
     turnPipeline.ts                  # 支付/地点/图片/选项共享的生成回合提交边界
     paymentConsistency.ts            # 工作合同、付款正文/命令一致性门禁与已知旧档修复
     turnConsistency.ts               # 场景、目标、选项、配图原子一致性门禁与已知场景旧档修复
@@ -39,29 +42,35 @@ public-tests/
   choice-contract.ts                 # 正文、行动票和数字输入同源回归
   reading-anchor.ts                  # 续玩恢复点不落入底部空白的回归
   audio-synth.ts                     # 程序化音频与事件路由回归
+  world-expansion.ts                 # 12 地图/8 角色/双语旅行/首次登场与重逢回归
+  preset-events.ts                   # 48 事件、轮换持久化、目标/危险优先级和第一人称图片回归
 ```
 
 ## 3. 核心模块
 
 ### 状态、协议与回合
 
-`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作和调用适配器；生成结果统一先进入 `engine/turnPipeline.ts`，按同一份提交前存档依次完成支付规范化、地点/图片/选项规范化、机械校验与提交判定，只有通过后才一次性交给 `engine/reducer.ts`。人物、地图节点、具体场景、关系、物品、数值、工作合同、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`protocol.ts` 同时兼容标准 `[command: ...]` 与模型偶发的 `[command key="..."]` 缺冒号属性格式，机器协议不会进入可见正文；存档规范化也会移除旧版本已经泄漏的完整协议块。`engine/domainRules.ts` 权威结算短工、餐食、普通/现场休息、公共休息处撤退、住宿、车厢休息、泛化消费澄清和六条普通车票路线，并用 `clock-add` 保持跨日时间。每条规则声明 `successContinuation / rejectionContinuation`：`resume` 保留原 `decisionContext` 并让 reducer 重新校验未执行的兄弟选项，`derive` 从权威新状态派生后续，`checkpoint` 进入停止点，旧规则才默认 `replace`。因此领域动作不再无条件安装一套全局选项。地图节点的 `capabilities` 是短工、热饭与住宿的执行前置条件，月线车厢只有 `carriage-rest`，错误自由输入会零效果拒绝并继续原线程。`repairLegacyDomainChoiceReset()` 识别旧固定菜单，从前一场不可变 choice record 恢复仍合法分支，并同步修复当前记录；标记保证二次载入不重复迁移。接受与拒绝的本地行动都写入可读 `narration`，接受结果先于数值条，拒绝结果不安排场景图。短工使用 `repeatPolicy: location-day` 写入地点/日期作用域标记；`repairDomainRepeatState()` 把旧档最新已完成短工迁移为已结算。`rest-commitment` 区分真正休息与询价/问路，`dangerPolicy` 决定恢复回合禁止同回合危险、或在撤退时原子结束当前威胁。`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
+`useStoryEngine.ts` 负责读取 cartridge、提交玩家动作和调用适配器；生成结果统一先进入 `engine/turnPipeline.ts`，按同一份提交前存档依次完成支付规范化、地点/图片/选项规范化、机械校验与提交判定，只有通过后才一次性交给 `engine/reducer.ts`。人物、地图节点、具体场景、关系、物品、数值、工作合同、危险阶段、图片块和选择都属于 `StorySave` 权威状态；模型正文不能直接绕过 reducer 改写存档。`protocol.ts` 同时兼容标准 `[command: ...]` 与模型偶发的 `[command key="..."]` 缺冒号属性格式，机器协议不会进入可见正文；存档规范化也会移除旧版本已经泄漏的完整协议块。`engine/domainRules.ts` 权威结算短工、餐食、普通/现场休息、公共休息处撤退、住宿、车厢休息、泛化消费澄清和十一条普通车票路线，并用 `clock-add` 保持跨日时间。五个新增目的地使用 `replace` 原子安装三条地区专属入口，其余旅行继续 `derive`；reducer 将受信任的本地 `successChoices` 与作者级确定性人物入口保留下来，不再被通用词面过滤器误删。每条规则声明 `successContinuation / rejectionContinuation`：`resume` 保留原 `decisionContext` 并让 reducer 重新校验未执行的兄弟选项，`derive` 从权威新状态派生后续，`checkpoint` 进入停止点，旧规则才默认 `replace`。因此领域动作不再无条件安装一套全局选项。地图节点的 `capabilities` 是短工、热饭与住宿的执行前置条件，月线车厢只有 `carriage-rest`，错误自由输入会零效果拒绝并继续原线程。`repairLegacyDomainChoiceReset()` 识别旧固定菜单，从前一场不可变 choice record 恢复仍合法分支，并同步修复当前记录；标记保证二次载入不重复迁移。接受与拒绝的本地行动都写入可读 `narration`，接受结果先于数值条，拒绝结果不安排场景图。短工使用 `repeatPolicy: location-day` 写入地点/日期作用域标记；`repairDomainRepeatState()` 把旧档最新已完成短工迁移为已结算。`rest-commitment` 区分真正休息与询价/问路，`dangerPolicy` 决定恢复回合禁止同回合危险、或在撤退时原子结束当前威胁。`engine/continuity.ts` 为跨地区旅行补充月线中转，但不会重复已经由正文亲历的车厢场景。
 
 动态有偿工作使用 `[job]` 协议：`offer` 固化稳定工作 ID、雇主、工作内容和明确工资，`settle` 只能结算未完成合同，并由 reducer 直接按记录工资增加钱币和 `jobs_completed`；同回合额外的 coin widget 会被拒绝且 reducer 也做去重防御。罗温和塞莱斯特的开局即时短工同样使用稳定 `offer → settle`，不再靠正文旁的裸加币命令；“拿短工报酬后留在码头”也会先完成装货、按原合同结算八枚钱币，再保留在码头。`paymentConsistency.ts` 在任何生成正文写入存档前机械核对钱币、铜板、铜币、硬币等报价、付款、消费和合同金额；它还把报酬、工钱、薪水、工资、pay、wages、salary、compensation 与玩家赚得/收到/领到/被交付的组合识别为完成付款，即使句中没有币种词也必须具有可见精确金额和结算指令。明确否定句、未来领取/仍待结算的计划与 NPC 自己领工资不算玩家收入；`will pay` 是报价承诺，`hands you / received` 才是已发生转账，英文条件词使用完整词边界，避免把 `shift` 内的 `if` 误判成付款承诺。旧存档若最近回合已经写成完成付款，只在唯一未结合同能提供精确工资且该回合没有加币记录时补账并结清；没有合同或多个合同时不猜金额。消费侧继续用当前玩家行动做授权门禁：询价、寻找和考虑不是付款同意；“把钱全部花完”没有购买对象，也不是交易授权，Cartridge 的精确领域规则会解释余额未变并要求选择具体商品或服务。未经授权的消费正文、正文声称花光但没有合法事务、隐藏扣款均拒绝；“你用这枚硬币支付”会识别为一枚支出，正向 coin widget 会被判为方向冲突。明确订房由 `overnight-room` 领域规则原子完成余额门禁、扣 `10` 枚、写入 `lodging_secured` 与结束当晚，英文 `stay overnight / pay for the room` 同样先进入本地预检而不落给模型。钱币达到 `10` 时目标自动从挣钱推进为住宿/工作/搭车决策，未订房又降到 `9` 以下时退回挣钱。首次一致性失败会要求当前适配器完整重写同一回合，第二次仍失败则不提交。
 
 每个非 demo 生成回合还必须输出唯一 `[scene_location]`；正文跨地图节点抵达必须同回合输出 `[map_update]`，明确接受或被交付一项新任务时必须输出 `[state]`，场景图必须用 `[image_location]` 声明与 `scene_location` 完全相同的具体场景。`StorySave.location` 保存权威地图节点，`sceneLocation` 保存旅店、工坊、田舍等当前具体场景；旧存档缺少后者时回退到地图节点。地图节点的双语 `routeHints` 提供稳定语义指纹；动态地点的 `[map_update]` 额外接受稳定 `location_id` 与管道分隔的 `route_hints`。reducer 只保留正文、地图公开描述或玩家明确命名动作已经证明的别名，丢弃隐藏/泛化别名，并把后续别名合并到同一 ID；缺少模型 ID 时按规范化地点名生成确定性后备 ID。旧动态存档补入规范地点名，只在最近可见历史同时证明父地点和当前子地点时恢复该子地点别名。`turnConsistency.ts` 的 `inferActionDestination()` 要求行动同时具备移动/承诺动词和唯一非当前节点指纹，因而可把“往田野深处检查藤架”解析到 `silverleaf-vineyard`，但不会因在车厢里讨论田野而传送；别名分数并列或一个既有 ID 被用于不同规范地点名时拒绝。`canonicalizeTurnMetadata()` 用唯一目的地补齐遗漏的 `map_update`，替换旧地点的 `scene_location`，并允许“田野深处”等节点内细分地点继续作为具体场景。模型明确声称玩家仍在旧地点时不静默改写，而是进入修复。模型缺少地点绑定或只把图片绑到父级地图的提议会被丢弃并交由本地图片导演重建；可信作者图可在本地绑定当前具体场景。
 
-真正的状态冲突会触发一次完整重写；重写仍不一致时，普通未知行动由 `applyConsistencyRecovery()` 拒绝不可靠内容、保持地点/目标/数值/物品/关系不变，并把未经证明的失败行动写入 `lastActionId` 与隔离事实。每轮合法选择在 reducer 提交后由 `bindChoiceDestinations()` 预解析；可确定路线保存 `targetLocationId`，重载时重新绑定。刚点击的系统跨地点按钮优先读取这个稳定 ID，再回退到实时语义推断；若模型和一次修复仍失败，`applyDisplayedRouteFallback()` 只提交本地确定的 `map_update + scene_location`，用统一 transition/effect 记录抵达，并从新地点生成可执行选择，不再退回“仍在旧地点”。如果唯一问题是 `turn.requires_actionable_choices`，`turnPipeline` 允许提交已经合法发生的正文与状态。`deriveReplylessChoices()` 在普通同地图回合才考虑仍有依据且未刚执行的旧 sibling；一旦 `danger.phase` 不为 `calm`，旧选项完全失去兜底资格，改由 `contextualDangerChoiceLabels()` 把当前 `currentThreat` 写入确认、直接应对与撤离按钮。`createRecoveryChoices()` 使用同一具体危险文案；无危险且存在当前目标时只返回目标本身，两者都没有时才返回“观察当前地点的新变化”。它不再加入可能跳走现场的泛化同行讨论。`repairLegacyObjectiveRecoveryChoices()` 在载入时同步改写旧版抽象目标按钮、旧“目标 + 观察 + 商量”组合和当前 scene 的 choice record，迁移幂等。自由输入仍开放，也不为补数量创造新实体。支付、地点、任务、图片或其他状态问题绝不走这条旁路。`repairLegacyConsistencyRecovery()` 同步改写旧正文、文章选项和底部选项；`restoreDeterministicRecoveryChoice()` 进一步识别后来已经由确定性规则或唯一语义目的地证明可执行的旧失败行动，将其作为精确本地路线恢复。
+真正的状态冲突会触发一次完整重写；重写仍不一致时，普通未知行动由 `applyConsistencyRecovery()` 拒绝不可靠内容、保持地点/目标/数值/物品/关系不变，并把未经证明的失败行动写入 `lastActionId` 与隔离事实。每轮合法选择在 reducer 提交后由 `bindChoiceDestinations()` 预解析；可确定路线保存 `targetLocationId`，重载时重新绑定。刚点击的系统跨地点按钮优先读取这个稳定 ID，再回退到实时语义推断；若模型和一次修复仍失败，`applyDisplayedRouteFallback()` 只提交本地确定的 `map_update + scene_location`，用统一 transition/effect 记录抵达，并从新地点生成可执行选择，不再退回“仍在旧地点”。如果唯一问题是 `turn.requires_actionable_choices`，`turnPipeline` 允许提交已经合法发生的正文与状态。`deriveReplylessChoices()` 在普通同地图回合才考虑仍有依据且未刚执行的旧 sibling；一旦 `danger.phase` 不为 `calm`，旧选项完全失去兜底资格，改由 `contextualDangerChoiceLabels()` 把当前 `currentThreat` 写入确认、直接应对与撤离按钮。`createRecoveryChoices()` 使用同一具体危险文案；无危险且存在当前目标时只返回目标本身；目标、等待回应、未完成工作和危险都不存在时优先返回当前地点的具体预设事件，只有事件池也不可用才退回“观察当前地点的新变化”。它不再加入可能跳走现场的泛化同行讨论。`repairLegacyObjectiveRecoveryChoices()` 在载入时同步改写旧版抽象目标按钮、旧“目标 + 观察 + 商量”组合和当前 scene 的 choice record，迁移幂等。自由输入仍开放，也不为补数量创造新实体。支付、地点、任务、图片或其他状态问题绝不走这条旁路。`repairLegacyConsistencyRecovery()` 同步改写旧正文、文章选项和底部选项；`restoreDeterministicRecoveryChoice()` 进一步识别后来已经由确定性规则或唯一语义目的地证明可执行的旧失败行动，将其作为精确本地路线恢复。
 
 `canonicalizeTurnMetadata()` 还会在回合提交前逐项处理选择：先删除“商量怎么办、观察变化、等待、换个办法”等生成式占位按钮，以及与本回合玩家行动相同或只增加“继续 / 再次 / retry / resume”前缀的即时重复，再删除不能在新场景中直接行动的旧地点选项，并用 `filterGroundedChoices()` 检查当回合正文与权威人物、地图详情、物品、活动工作和数值定义。中文先拆分稳定实体，把普通提问/动作修饰语排除，再要求剩余复合词能分解成各自至少两个字、且来自单条可见正文或权威状态的片段；英文同样把动作动词与具体名词分开，禁止凭同义动作词误删“货箱 / 仓门”等已经可见的真实对象。匹配 Cartridge 领域规则的选项不再用正文词面放行：只有 `resolveDomainAction()` 返回 `accepted` 才保留，`rejected` 在显示前删除。过滤是逐项而不是整组否决；剩下 `1–5` 项都可直接提交和渲染。
 
 `authoredTurns.ts` 将当前仍显示且玩家仍在开局地图节点的固定 choice 映射到 `opening.deterministicTurns`；因此先询价或观察后，未领取的三条开局工作仍由本地固定路线执行，不再受 `scene === 0` 限制。`deterministicChoiceTurns` 处理后续已经成立的合同、固定同行、主路线节点和作者支线按钮；它必须同时精确匹配当前可见按钮，并满足声明的地点、稳定人物和工作状态。所有系统按钮仍经过统一支付/地点/选项校验；相似自由输入不会被关键词误捕，继续调用 Adapter。
 
-七个地图节点分别保存本地工作、社交和休息事实；这些事实进入 Aigram 世界上下文，防止自由生成把所有地点写成同一套活动。危险导演为仍处于 `calm` 的新存档保留六个完整场景的首轮宽限；正文一旦已经建立袭击、营救、追赶、闯入或正面对峙，`turnConsistency.ts` 要求同回合提交 `encounter`，危险状态会立即越过宽限。后续任何未结算回合都必须在正文和命令里保留同一威胁，商量、观察、询问、等待或计划都不构成自动解除；只有可见正文明确解释结局并提交 `resolution` 才能关闭。威胁选择加入当前地图节点，避免不同路线每轮都重复同一威胁。模型丢失全部危险选项时，reducer 使用 Cartridge 配置的方法生成带当前具体威胁的现场按钮，不再复用冲突前的工作、旅行或旧目标选项。`repairLegacyDangerMethodChoices()` 会同步替换旧存档中尚未执行的旧文案及当前正文选项记录，但不改写历史行动。
+十二个地图节点分别保存至少四类本地事实：工作、日常社交、环境变化与跨区线索；这些事实进入 Aigram 世界上下文，防止自由生成把所有地点写成同一套活动。`wanderlightWorldExpansion.ts` 还把五名未来预设人物的稳定 ID/地区绑定和五类跨区域线索写入幕后导演合同，但角色姓名不会进入玩家开场、地图或初始 `StorySave`。抵达后的首条人物入口由 `deterministicChoiceTurns` 在本地完成合法首次登场；存档已有同 ID 时，匹配顺序改用重逢回合，避免重复自我介绍。危险池从四项扩到十项，覆盖信号、潮闸、热水、蓄雨渠、授粉灯和邮袋冲突。危险导演为仍处于 `calm` 的新存档保留六个完整场景的首轮宽限；正文一旦已经建立袭击、营救、追赶、闯入或正面对峙，`turnConsistency.ts` 要求同回合提交 `encounter`，危险状态会立即越过宽限。后续任何未结算回合都必须在正文和命令里保留同一威胁，商量、观察、询问、等待或计划都不构成自动解除；只有可见正文明确解释结局并提交 `resolution` 才能关闭。威胁选择加入当前地图节点，避免不同路线每轮都重复同一威胁。模型丢失全部危险选项时，reducer 使用 Cartridge 配置的方法生成带当前具体威胁的现场按钮，不再复用冲突前的工作、旅行或旧目标选项。`repairLegacyDangerMethodChoices()` 会同步替换旧存档中尚未执行的旧文案及当前正文选项记录，但不改写历史行动。
+
+`wanderlightPresetEvents.ts` 为每个地图节点提供四条作者级双语事件，共 `48` 条，覆盖本地工作、日常生活、环境变化、来访者与跨区线索。`presetEventDirector.ts` 只在没有当前目标、没有等待回应的 `decisionContext`、没有未完成工作合同、没有待解决危险且没有更高优先级确定性回合时提供系统兜底；它先读取可见 `save.location`，再回退地图当前标记，以免旧档地点标记短暂不同步。轮换以地点、日期、周期和已使用次数确定，不重复紧邻事件，并把 `preset_event:last`、日期、分类和每条次数写入 `StorySave.facts`。因此通用“观察新变化”只保留为没有任何合格事件时的最后兜底；正常按钮直接写出正在发生的具体事情。玩家仍可用自由输入主动查看当地动静，但系统不会用随机事件按钮覆盖正在进行的目标、回应、工作或危险线程。
+
+`mergeAuthoredMapNodes()` 在载入时以稳定 ID 合并 Cartridge 新增地图：保留旧存档的访问状态、动态地点和当前节点，补入缺失的作者节点并标记为未访问。迁移重复执行不会新增重复节点或改变已保存路线，因此现有七节点存档不需要重开即可获得五个新增目的地。
 
 ### 角色视觉身份与图片生成
 
-每个长期角色用稳定 ID 关联 `CharacterVisualIdentity`。权威存档保存身份状态、版本、`anchorTaskId`、不可变特征、服装语言和禁止漂移项，不持久化服务的临时图片 URL。预设角色指向已审核锚点任务；动态角色在可见正式登场后先调用一次 `text` 生成 `512×640` 单人锚点，成功后保存任务 ID，再从锚点图片以单参考 `edit` 生成剧情动作图。
+每个长期角色用稳定 ID 关联 `CharacterVisualIdentity`。权威存档保存身份状态、版本、`anchorTaskId`、不可变特征、服装语言和禁止漂移项，不持久化服务的临时图片 URL。原有三名开场角色指向已审核锚点任务；五名新增预设角色拥有作者级完整身份合同，在首次可见登场后与动态角色一样调用一次 `text` 生成 `512×640` 单人锚点，成功后保存任务 ID，再从锚点图片以单参考 `edit` 生成剧情动作图。
 
 `engine/characterContinuity.ts` 在统一回合管线和 reducer 两层执行人物门禁。新动态角色必须同时满足：正文先出现可辨认形态或动作、正文给出日常名字来源、名字之后出现当前意图或互动、协议提供合法稳定 ID、英文外貌合同和至少一项不可变特征。`character_update` 不能让已有 ID 改名，也不能把已有姓名绑定到另一个 ID；`party_change add` 只能引用已经固化的人物，并要求正文明确同行；关系命令不能顺带创造陌生人。管线层将违规草稿送去一次修复，reducer 层即使在 demo 或直接调用时也拒绝写入。
 
@@ -69,7 +78,9 @@ public-tests/
 
 人物详情公开显示 `queued / generating / anchored / failed / unanchored` 的视觉身份状态。锚点失败不阻塞文字叙事，但在成功重试前不会继续生成该角色的无参考清晰面孔。领域规则触发的旅行会被 reducer 合成为图片导演可读的 `map_update`，因此即使没有模型图片提示，也会为首次抵达安排地点空镜；地点的工作、社交与休息事实会进入构图提示，且开场行李、种荚和雨街残留由图片导演拒绝。
 
-`imageDirector.ts` 的兜底节奏为连续 `2` 个有效回合没有新图即补图；地点变化、关系转折和任何说话者的重要对白可立即触发。重要性根据对白是否揭示关键事实、改变关系、设定边界、作出承诺/请求、警告危险、建立任务或形成明显情绪转折判定；适配器还可用 `[dialogue_focus]` 明确说话者与可见表情。对白镜头不依赖有限情绪词，也不受普通配图节流限制，并优先于模型提出的普通环境图。已有 `visualIdentity` 的说话者从稳定人物 ID 取得锚点；动态未锚定人物不会借用其他身份，但仍使用中近景反应镜头并保留当前地点背景。`engine/itemImage.ts` 独立构造行囊图鉴 prompt；`ITEM_IMAGE_STYLE_VERSION=3` 会让旧写实缓存失效并在再次打开行囊时重新排队。内部媒体 QA 已验证编辑水粉、无文字与准确三枚印章；公开文档不记录过程任务 ID。
+`imageDirector.ts` 的兜底节奏为连续 `2` 个有效回合没有新图即补图；地点变化、关系转折和任何说话者的重要对白可立即触发。重要性根据对白是否揭示关键事实、改变关系、设定边界、作出承诺/请求、警告危险、建立任务或形成明显情绪转折判定；适配器还可用 `[dialogue_focus]` 明确说话者与可见表情。对白镜头不依赖有限情绪词，也不受普通配图节流限制，并优先于模型提出的普通环境图。已有 `visualIdentity` 的说话者从稳定人物 ID 取得锚点；动态未锚定人物不会借用其他身份，但仍使用中近景反应镜头并保留当前地点背景。
+
+图片提示协议版本为 `7`。导演不再因为正文使用第二人称“你”就判定主角可见；只有明确的视觉主体声明才能让主角进入画面。普通观察、人物递物、重要对白、桌面/门窗/物件和环境变化优先或按稳定散列选用 `first-person`，地点初见保持建立镜头，必须看见主角完整动作或空间关系时才使用第三人称。第一人称提示明确规定相机是玩家眼睛，禁止主角脸、头、背、肩、轮廓、倒影和越肩构图，正文未证明时也禁止补手；对应图片块持久化 `perspective: first-person` 与 `playerVisible: false`，媒体请求固定为 `text` 且 `reference_urls` 为空。重要对白用主角位置的现场中近景观察对方表情，不再自动变成人物脱离环境的证件照。`engine/itemImage.ts` 独立构造行囊图鉴 prompt；`ITEM_IMAGE_STYLE_VERSION=3` 会让旧写实缓存失效并在再次打开行囊时重新排队。内部媒体 QA 已验证编辑水粉、无文字、第一人称物件镜头与准确三枚印章；公开文档不记录过程任务 ID。
 
 ### 屏幕适配与交互
 
@@ -95,10 +106,10 @@ public-tests/
 
 ## 4. 扩展点
 
-- **修改世界或玩法**：编辑 `src/story/cartridges/wanderlight.ts` 的 director、domain rules、数值、地图与角色；核心路线正文位于 `wanderlightV1Content.ts` 和 `wanderlightV1Outcomes.ts`。通用判定逻辑放入 `src/story/engine/`，不要藏在提示词里。
-- **调整叙事语言**：预写中英文内容位于 `src/story/cartridges/wanderlight.ts`；未来模型的双语写作底线位于 `src/story/narrativeStyle.ts`，两个生成适配器必须持续注入它。修改后运行 `npm run test:narrative` 并分别试玩中英文路径。
-- **增加角色**：先写稳定角色 ID、明确成年年龄、可见首次登场和 `visualIdentity`；预设角色填审核后的 `anchorTaskId`，动态角色保留首次登场后自动固化流程。
-- **调整画风或素材**：统一修改 cartridge 中的 `GOUACHE`、`sceneImageDirection` 与 `doc/visual.md`；正式资产只通过 AlterU Media Service 生成。换风格前必须重新做锚点→换地点 edit 连续性评审，不能只换一个风格词。
+- **修改世界或玩法**：编辑 `src/story/cartridges/wanderlight.ts` 的 director、domain rules 与数值；原有核心路线位于 `wanderlightV1Content.ts` 和 `wanderlightV1Outcomes.ts`，新增地区、人物、抵达入口、重逢和跨区导演规则集中在 `wanderlightWorldExpansion.ts`，地区事件集中在 `wanderlightPresetEvents.ts`。通用判定逻辑放入 `src/story/engine/`，不要藏在提示词里。
+- **调整叙事语言**：预写中英文内容位于 `src/story/cartridges/`；未来模型的双语写作底线位于 `src/story/narrativeStyle.ts`，两个生成适配器必须持续注入它。修改后运行 `npm test` 并分别试玩中英文路径。
+- **增加角色**：先写稳定角色 ID、明确成年年龄、可见首次登场和 `visualIdentity`；已有审核锚点可直接填 `anchorTaskId`，否则让预设或动态角色在首次可见登场后通过现有媒体流程只生成一次身份锚点。
+- **调整画风或素材**：统一修改 cartridge 中的 `GOUACHE`、`sceneImageDirection`、`engine/imageDirector.ts` 与 `doc/visual.md`；正式资产只通过 AlterU Media Service 生成。换风格或镜头合同前必须重新做锚点→换地点 edit 连续性评审以及第一人称无头像引用回归，不能只换一个风格词。
 - **调整数值与压力**：修改 cartridge 的 `statDefinitions`、`dangerDirector` 和对应 domain rules，并同步 `doc/requirements.md` 的具体数值与恢复合同。
 - **新增后端能力**：Aigram 平台能力扩展 `shared/runtime/bridge.ts`；若未来增加游戏自有 `/api/*`，必须从 `src/game-id.ts` 计算 `API_BASE = '/' + GAME_ID`，禁止写死旧 UUID 或裸请求 `/api/*`。
-- **验收**：公开仓库运行全部 `test:*` 脚本与 `npm run build`。新增 `test:choice-quality` 以中英双语验证生成式占位按钮删除、刚执行动作的即时同义重复删除、活动冲突绝不复用旧 sibling；`test:extended-continuity` 连续 `10` 回合验证营救冲突在观察、商量、等待、无关新冲突和缺失命令下均不能消失，只有可见结算才能关闭。`test:multiturn` 另以中英双语连续跑报价—中间步骤—结算、询价—授权住宿—停止点、插入休息—恢复原线、动态地点—刷新、动态人物—关系持久化、低精力拒绝—恢复—工作—重复门禁共 `12` 条轨迹。支付矩阵包含 `57` 种未来工资组合，恢复专项模拟 `120` 个动态休息地点，地点专项模拟 `120` 个动态地点；浏览器再覆盖完整中英文作者路线、动态人物定型、自由输入刷新锚点、旧循环迁移、短工重复、付款授权、零体力安全菜单、推荐选项正文/底栏/数字输入同源，以及 `390×844`、`320×568` 无横向溢出。双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。
+- **验收**：公开仓库运行 `npm test` 与 `npm run build`。`test:world-expansion` 逐项验证双语 12 节点/8 角色、五个新地区的确定性旅行和三条抵达入口、五名人物初始隐藏、合法首次登场、权威存档写入及已认识后的重逢分支；`test:preset-events` 验证双语 `48` 事件、每地四条、刷新稳定、同地去重、存档持久化、危险/目标优先级和第一人称图片所有权。`test:choice-quality` 验证生成式占位按钮删除、刚执行动作的即时同义重复删除、活动冲突绝不复用旧 sibling；`test:extended-continuity` 连续 `10` 回合验证营救冲突在观察、商量、等待、无关新冲突和缺失命令下均不能消失，只有可见结算才能关闭。`test:multiturn` 另以中英双语连续跑报价—中间步骤—结算、询价—授权住宿—停止点、插入休息—恢复原线、动态地点—刷新、动态人物—关系持久化、低精力拒绝—恢复—工作—重复门禁共 `12` 条轨迹。支付矩阵包含 `57` 种未来工资组合，恢复专项模拟 `120` 个动态休息地点，地点专项模拟 `120` 个动态地点；浏览器再覆盖完整中英文作者路线、动态人物定型、自由输入刷新锚点、旧循环迁移、短工重复、付款授权、零体力安全菜单、推荐选项正文/底栏/数字输入同源，以及 `390×844`、`320×568` 第一人称事件图无横向溢出。双尺寸视觉证据、媒体任务证据、生成实验和内部发布 QA 保留在非公开研发档案中，不随公开源码分发。

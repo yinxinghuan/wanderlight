@@ -369,10 +369,16 @@ export function canonicalizeTurnMetadata(
         blocks: [...save.blocks, ...parsed.blocks],
       }
       const textGrounded = new Set(filterGroundedChoices(candidates, candidateSave, cartridge, parsed.blocks).map((choice) => choice.label))
-      const grounded = candidates.filter((choice) => {
-        const domain = resolveDomainAction(candidateSave, cartridge, choice.label)
-        return domain ? domain.status === 'accepted' : Boolean(inferActionDestination(candidateSave, cartridge, choice.label)) || textGrounded.has(choice.label)
-      }).map((choice) => choice.label)
+      // Local authored turns are reviewed source content, not model output.
+      // Keep their concrete non-generic choices after basic stale/repeat checks;
+      // the mechanical noun heuristic is intentionally conservative and can
+      // reject valid authored relations such as “box base” after “wooden box”.
+      const grounded = trustedAuthored
+        ? candidates.map((choice) => choice.label)
+        : candidates.filter((choice) => {
+            const domain = resolveDomainAction(candidateSave, cartridge, choice.label)
+            return domain ? domain.status === 'accepted' : Boolean(inferActionDestination(candidateSave, cartridge, choice.label)) || textGrounded.has(choice.label)
+          }).map((choice) => choice.label)
       if (grounded.length !== command.choices.length || grounded.some((label, index) => label !== command.choices[index])) {
         commands = commands.map((entry, index) => index === choiceIndex ? { type: 'choices' as const, choices: grounded } : entry)
       }

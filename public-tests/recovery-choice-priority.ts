@@ -18,7 +18,10 @@ en.objective = 'Find an alternate survey plan.'
 assert.deepEqual(createRecoveryChoices(en, wanderlightEn).map((choice) => choice.label), ['Find an alternate survey plan'], 'English objective is also the sole direct recovery action')
 
 const noObjective = { ...zh, objective: '' }
-assert.deepEqual(createRecoveryChoices(noObjective, wanderlight).map((choice) => choice.label), ['观察银叶葡萄丘的新变化'], '没有持续事项时保留观察变化兜底')
+const idleChoices = createRecoveryChoices(noObjective, wanderlight)
+assert.equal(idleChoices.length, 1, '没有持续事项时提供一个具体地区事件入口')
+assert.ok(wanderlight.presetEventDirector?.events.some((event) => event.locationId === 'silverleaf-vineyard' && event.choiceLabel === idleChoices[0]?.label), '空闲兜底必须来自当前地区预设事件池')
+assert.equal(/观察银叶葡萄丘的新变化/.test(idleChoices[0]?.label ?? ''), false, '有具体事件时不显示泛化观察文案')
 
 const legacyChoices = [
   { id: 'legacy-observe', label: '观察银叶葡萄丘的新变化' },

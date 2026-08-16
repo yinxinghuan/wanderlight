@@ -6,7 +6,7 @@ import { aigramAdapter } from './adapters/aigram'
 import { mockAdapter } from './adapters/mock'
 import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
-import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, repairLegacyObjectiveRecoveryChoices, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, mergeAuthoredMapNodes, normalizeCharacterState, repairLegacyConsistencyRecovery, repairLegacyObjectiveRecoveryChoices, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, repairUnsettledContractPayment } from './engine/paymentConsistency'
 import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence, repairPersistedMapRouteHints } from './engine/turnConsistency'
@@ -15,6 +15,7 @@ import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from '
 import { buildDangerDirective, normalizeDangerState, repairLegacyDangerMethodChoices } from './engine/dangerDirector'
 import { activeStatFloorRule, domainSuppressesDanger, repairDomainRepeatState, repairEndedSessionChoices, repairLegacyDomainChoiceReset, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
 import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from './engine/authoredTurns'
+import { resolvePresetEventTurn } from './engine/presetEventDirector'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
 import { inventoryImagePrompt } from './engine/itemImage'
@@ -86,7 +87,7 @@ function recoverPersistedChoices(candidate: LegacyStorySave, cartridge: StoryCar
   }
 }
 
-function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge: StoryCartridge, incomingChatId?: string): StorySave {
+export function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge: StoryCartridge, incomingChatId?: string): StorySave {
   if (!candidate || candidate.cartridgeId !== cartridge.id || !Array.isArray(candidate.blocks)) return createInitialSave(cartridge, incomingChatId)
   if (incomingChatId && candidate.remoteChatId && candidate.remoteChatId !== incomingChatId) return createInitialSave(cartridge, incomingChatId)
   const repaired = repairLegacyConsistencyRecovery(repairKnownForestSceneDivergence(
@@ -119,15 +120,12 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
       imageStatus: item.imageStatus === 'generating' ? 'queued' : item.imageStatus ?? (item.imageUrl ? 'ready' : 'idle'),
     }
   })
-  const initialPlaces = new Map(cartridge.initialMap.map((node) => [node.id, node]))
-  const map = repairPersistedMapRouteHints((repaired.map ?? cartridge.initialMap).map((node) => {
-    const definition = initialPlaces.get(node.id)
-    return {
-      ...definition, ...node,
-      visited: node.visited ?? Boolean(node.current || node.id.startsWith('map-')),
-      detail: node.detail ?? definition?.detail, lore: node.lore ?? definition?.lore, facts: node.facts ?? definition?.facts,
-    }
-  }), repaired.sceneLocation ?? repaired.location, repaired.blocks, cartridge)
+  const map = repairPersistedMapRouteHints(
+    mergeAuthoredMapNodes(repaired.map, cartridge),
+    repaired.sceneLocation ?? repaired.location,
+    repaired.blocks,
+    cartridge,
+  )
   const characterState = normalizeCharacterState(repaired, cartridge)
   let normalized = repairLegacyDomainChoiceReset(repairEndedSessionChoices(repairDomainRepeatState({
     ...repaired, ...characterState, version: 10, locale: repaired.locale ?? cartridge.locale,
@@ -328,8 +326,12 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
       const domainResolution = resolveDomainAction(base, activeCartridge, normalizedAction)
       const authoredOpeningTurn = domainResolution ? undefined : resolveDeterministicOpeningTurn(base, activeCartridge, normalizedAction)
       const authoredChoiceTurn = domainResolution || authoredOpeningTurn ? undefined : resolveDeterministicChoiceTurn(base, activeCartridge, normalizedAction)
-      const authoredTurn = authoredOpeningTurn ?? authoredChoiceTurn
-      const dangerDirective = domainResolution?.status === 'rejected' || domainSuppressesDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
+      const scheduledDanger = domainResolution?.status === 'rejected' || domainSuppressesDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
+      const presetEventResolution = domainResolution || authoredOpeningTurn || authoredChoiceTurn || scheduledDanger
+        ? undefined
+        : resolvePresetEventTurn(base, activeCartridge, normalizedAction)
+      const authoredTurn = authoredOpeningTurn ?? authoredChoiceTurn ?? presetEventResolution?.turn
+      const dangerDirective = presetEventResolution ? undefined : scheduledDanger
       let result = domainResolution
         ? { content: domainResolution.status === 'accepted' ? domainResolution.successText : domainResolution.reasons.join(activeCartridge.locale === 'zh' ? '；' : '; ') }
         : authoredTurn
@@ -355,7 +357,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
           if (prepared.canCommitWithoutReplies) {
             commit((current) => applyParsedScene(
               localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
-              result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId,
+              result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId, presetEventResolution,
             ))
             setPendingAction('')
             setProgress(null)
@@ -378,7 +380,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
               || canCommitDisplayedChoiceWithoutGeneratedReplies(base, activeCartridge, normalizedAction, remaining)) {
               commit((current) => applyParsedScene(
                 localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
-                result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId,
+                result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId, presetEventResolution,
               ))
               setPendingAction('')
               setProgress(null)
@@ -399,7 +401,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
           }
         }
       }
-      commit((current) => applyParsedScene(localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction, result.imagePrompt, result.imageSubject, dangerDirective, domainResolution, result.imageCharacterId))
+      commit((current) => applyParsedScene(localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction, result.imagePrompt, result.imageSubject, dangerDirective, domainResolution, result.imageCharacterId, presetEventResolution))
       setPendingAction('')
       setProgress(null)
     } catch (cause) {

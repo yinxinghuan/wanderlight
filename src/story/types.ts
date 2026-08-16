@@ -65,7 +65,7 @@ export interface StoryCharacter extends CharacterDefinition {
 export interface Choice { id: string; label: string; targetLocationId?: string }
 export type ImageBlockStatus = 'idle' | 'queued' | 'generating' | 'ready' | 'failed'
 export const ITEM_IMAGE_STYLE_VERSION = 3
-export const SCENE_IMAGE_PROMPT_VERSION = 6
+export const SCENE_IMAGE_PROMPT_VERSION = 7
 export type SceneImageSubject = 'player' | 'environment' | 'others'
 export interface StoryBlock { id: string; kind: 'narration' | 'dialogue' | 'check' | 'change' | 'event' | 'summary' | 'image' | 'choices'; text: string; speaker?: string; tone?: string; data?: Record<string, string | number> }
 export interface EntityMetric { id?: string; label: string; value: string }
@@ -239,6 +239,30 @@ export interface StoryImageDirector {
   softTriggers: SceneImageTrigger[]
 }
 
+export type PresetEventCategory = 'local-work' | 'daily-life' | 'environment' | 'visitor' | 'cross-region'
+
+export interface PresetEventDefinition {
+  id: string
+  locationId: string
+  category: PresetEventCategory
+  choiceLabel: string
+  text: string
+  objective: string
+  choices: [string, ...string[]]
+  imagePrompt: string
+  imageSubject?: SceneImageSubject
+}
+
+export interface StoryPresetEventDirector {
+  events: PresetEventDefinition[]
+}
+
+export interface PresetEventResolution {
+  eventId: string
+  category: PresetEventCategory
+  turn: DemoTurn
+}
+
 export interface StoryCartridge {
   schemaVersion: 1
   id: CartridgeId
@@ -256,6 +280,7 @@ export interface StoryCartridge {
   sceneImageAvoid?: string
   transitionAnchor?: string
   imageDirector?: StoryImageDirector
+  presetEventDirector?: StoryPresetEventDirector
   director?: StoryDirector
   dangerDirector?: StoryDangerDirector
   domainRules?: StoryDomainRules

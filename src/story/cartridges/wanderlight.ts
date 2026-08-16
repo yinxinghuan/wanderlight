@@ -1,6 +1,14 @@
 import type { CharacterDefinition, CharacterVisualIdentity, Locale, StoryCartridge } from '../types'
 import { wanderlightV1Content } from './wanderlightV1Content'
 import { wanderlightV1Outcomes } from './wanderlightV1Outcomes'
+import {
+  wanderlightExpansionCharacters,
+  wanderlightExpansionDirector,
+  wanderlightExpansionMap,
+  wanderlightExpansionTravel,
+  wanderlightExpansionTurns,
+} from './wanderlightWorldExpansion'
+import { wanderlightPresetEvents } from './wanderlightPresetEvents'
 
 const coverImage = new URL('../img/worlds/wanderlight-entry.png', import.meta.url).href
 const entryImage = new URL('../img/worlds/wanderlight-entry.png', import.meta.url).href
@@ -52,6 +60,7 @@ function cast(locale: Locale): CharacterDefinition[] {
         'mt_8e6688de6ebff48488581f38aca6541b',
       ),
     },
+    ...wanderlightExpansionCharacters(locale),
   ]
 }
 
@@ -63,6 +72,15 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
     phases: ['calm' as const],
     reason: s('眼前的危险还没有解除，现在停下来休息会让你暴露其中。先应对危险，或撤退到安全的公共休息处。', 'The immediate danger is still active; stopping to rest would leave you exposed. Address it first, or withdraw to a safe public rest area.'),
   }
+  const travelDestinations = [
+    { nodeId: 'silverleaf-vineyard', label: s('银叶葡萄丘', 'Silverleaf Vineyard'), intent: s('独自买票去银叶葡萄丘', 'buy a ticket to Silverleaf Vineyard'), arrivalChoices: [] as string[] },
+    { nodeId: 'cupshadow-market', label: s('杯影夜市', 'Cupshadow Market'), intent: s('独自买票去杯影夜市', 'buy a ticket to Cupshadow Market'), arrivalChoices: [] as string[] },
+    { nodeId: 'mistpine-forest', label: s('雾杉林', 'Mistpine Forest'), intent: s('独自买票去雾杉林', 'buy a ticket to Mistpine Forest'), arrivalChoices: [] as string[] },
+    { nodeId: 'tidal-islands', label: s('潮汐群岛', 'Tidal Islands'), intent: s('独自买票去潮汐群岛', 'buy a ticket to the Tidal Islands'), arrivalChoices: [] as string[] },
+    { nodeId: 'far-lantern-institute', label: s('远灯研修院', 'Far Lantern Institute'), intent: s('独自买票去远灯研修院', 'buy a ticket to Far Lantern Institute'), arrivalChoices: [] as string[] },
+    { nodeId: 'lantern-quay', label: s('灯湾码头', 'Lantern Quay'), intent: s('独自买票回灯湾码头', 'buy a ticket back to Lantern Quay'), arrivalChoices: [] as string[] },
+    ...wanderlightExpansionTravel(locale),
+  ]
   return {
     legacyChoiceSets: [[
       s('接一份九十分钟短工（报酬 9 枚）', 'Take a ninety-minute shift (9 coin)'),
@@ -197,14 +215,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         successChoices: [],
         rejectionChoices: [],
       },
-      ...[
-        ['silverleaf-vineyard', s('银叶葡萄丘', 'Silverleaf Vineyard'), s('独自买票去银叶葡萄丘', 'buy a ticket to Silverleaf Vineyard')],
-        ['cupshadow-market', s('杯影夜市', 'Cupshadow Market'), s('独自买票去杯影夜市', 'buy a ticket to Cupshadow Market')],
-        ['mistpine-forest', s('雾杉林', 'Mistpine Forest'), s('独自买票去雾杉林', 'buy a ticket to Mistpine Forest')],
-        ['tidal-islands', s('潮汐群岛', 'Tidal Islands'), s('独自买票去潮汐群岛', 'buy a ticket to the Tidal Islands')],
-        ['far-lantern-institute', s('远灯研修院', 'Far Lantern Institute'), s('独自买票去远灯研修院', 'buy a ticket to Far Lantern Institute')],
-        ['lantern-quay', s('灯湾码头', 'Lantern Quay'), s('独自买票回灯湾码头', 'buy a ticket back to Lantern Quay')],
-      ].map(([nodeId, label, intent]) => ({
+      ...travelDestinations.map(({ nodeId, label, intent, arrivalChoices }) => ({
         id: `travel-${nodeId}`,
         intent,
         match: [intent, s(`独自前往${label}`, `travel alone to ${label}`), s(`买票前往${label}`, `buy passage to ${label}`)],
@@ -213,11 +224,11 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
           { type: 'stat' as const, id: 'coin', min: 3, reason: s('普通车票需要三枚钱币。你可以先接短工，或找乘务员谈谈。', 'A regular ticket costs three coin. Take a short job or speak with the steward first.') },
           { type: 'stat' as const, id: 'energy', min: 2, reason: s('你连走到月台都很勉强。先休息一下。', 'You are too tired even to reach the platform. Rest first.') },
         ],
-        successContinuation: 'derive' as const,
+        successContinuation: arrivalChoices.length ? 'replace' as const : 'derive' as const,
         rejectionContinuation: 'resume' as const,
         effects: [{ type: 'stat' as const, id: 'coin', delta: -3 }, { type: 'stat' as const, id: 'energy', delta: -2 }, { type: 'clock-add' as const, minutes: 55 }, { type: 'map' as const, nodeId }],
         successText: s(`你买好车票，先回到月台。列车关门后，旧地点的灯从湿玻璃上退远；再次开门时，${label}已经在外面。`, `You buy a ticket and return to the platform. The old lights recede across the wet glass; when the doors open again, ${label} is outside.`),
-        successChoices: [],
+        successChoices: arrivalChoices,
         rejectionChoices: [],
       })),
     ],
@@ -233,28 +244,28 @@ function worldMap(locale: Locale): StoryCartridge['initialMap'] {
       capabilities: ['local-shift', 'hot-meal', 'lodging', 'public-rest'],
       detail: s('渡口、月线总站和临时招工点都在这片湿石广场上。', 'The ferry, Moonline terminal, and day-labor posts share this wet-stone square.'),
       routeHints: zh ? ['灯湾码头', '渡口', '湿石广场', '招工点'] : ['Lantern Quay', 'ferry', 'wet-stone square', 'day-labor posts'],
-      facts: [s('末班月线 19:20 离站', 'Last Moonline leaves at 19:20'), s('可做路线整理和码头搬运', 'Route sorting and dock hauling pay on completion'), s('渡口食堂和楼上旅店整夜营业', 'The ferry canteen and upstairs inn stay open all night')],
+      facts: [s('末班月线 19:20 离站', 'Last Moonline leaves at 19:20'), s('可做路线整理和码头搬运', 'Route sorting and dock hauling pay on completion'), s('渡口食堂和楼上旅店整夜营业', 'The ferry canteen and upstairs inn stay open all night'), s('总站路线牌列有风玻璃崖、芦水渡村、白浪浴镇、旧石坑花园和云阶果园', 'The terminal route board lists Windglass Cliffs, Reedwater Crossing, Whitecap Baths, Old Quarry Gardens, and Cloudstep Orchard')],
     },
     {
       id: 'moonline-carriage', label: s('月线车厢', 'Moonline Carriage'), connectedTo: s('灯湾码头', 'Lantern Quay'),
       capabilities: ['carriage-rest'],
       detail: s('开往海岸各地的夜班车厢，适合在途中休息和保存进度。', 'A night carriage serving the coast, with time to rest and save along the way.'),
       routeHints: zh ? ['月线车厢', '车厢', '列车', '车窗'] : ['Moonline Carriage', 'carriage', 'train', 'train window'],
-      facts: [s('靠窗休息可恢复精力但会推进时间', 'Window-seat rest restores energy while time advances'), s('乘务员会说明下一站的工作与住宿', 'Stewards can explain work and lodging at the next stop')],
+      facts: [s('靠窗休息可恢复精力但会推进时间', 'Window-seat rest restores energy while time advances'), s('乘务员会说明下一站的工作与住宿', 'Stewards can explain work and lodging at the next stop'), s('车门旁的沿线图可以查看十个目的地区域', 'The route diagram beside the doors shows ten destination regions')],
     },
     {
       id: 'cupshadow-market', label: s('杯影夜市', 'Cupshadow Market'), connectedTo: s('灯湾码头', 'Lantern Quay'),
       capabilities: ['local-shift', 'hot-meal', 'public-rest'],
       detail: s('雨棚下有演出、食摊、搬运和布台短工。', 'Awnings shelter performances, food stalls, hauling, and stage work.'),
       routeHints: zh ? ['杯影夜市', '夜市', '雨棚', '舞台', '食摊'] : ['Cupshadow Market', 'night market', 'awnings', 'stage', 'food stalls'],
-      facts: [s('搬运和布台按场结算', 'Hauling and stage setup pay after each show'), s('共餐长桌是认识摊主和乐师的地方', 'A shared supper table brings vendors and musicians together'), s('闭市后可回灯湾旅店休息', 'The Lantern Quay inn remains available after closing')],
+      facts: [s('搬运和布台按场结算', 'Hauling and stage setup pay after each show'), s('共餐长桌是认识摊主和乐师的地方', 'A shared supper table brings vendors and musicians together'), s('闭市后可回灯湾旅店休息', 'The Lantern Quay inn remains available after closing'), s('演出用的湿织物通常送往白浪浴镇清洗', 'Wet performance cloth is usually sent to Whitecap Baths for washing')],
     },
     {
       id: 'silverleaf-vineyard', label: s('银叶葡萄丘', 'Silverleaf Vineyard'), connectedTo: s('月线车厢', 'Moonline Carriage'),
       capabilities: ['local-shift', 'hot-meal', 'lodging', 'public-rest'],
       detail: s('葡萄藤随月光转向，田舍常雇季节短工。', 'Moon-turning vines and field houses that hire seasonal workers.'),
       routeHints: zh ? ['银叶葡萄丘', '葡萄丘', '葡萄园', '葡萄行', '葡萄藤', '藤架', '田野', '田舍'] : ['Silverleaf Vineyard', 'vineyard', 'grape rows', 'grapevines', 'trellis', 'fields', 'field house'],
-      facts: [s('藤架修补和田野记录需要短工', 'Trellis repair and field surveys need temporary help'), s('晚餐长桌与试饮不要求发展亲密关系', 'Supper and tasting invitations carry no romantic obligation'), s('田舍有十枚钱币的客房', 'The field house rents rooms for ten coin')],
+      facts: [s('藤架修补和田野记录需要短工', 'Trellis repair and field surveys need temporary help'), s('晚餐长桌与试饮不要求发展亲密关系', 'Supper and tasting invitations carry no romantic obligation'), s('田舍有十枚钱币的客房', 'The field house rents rooms for ten coin'), s('最近的花粉蛾从云阶果园改变了迁飞方向', 'Pollinating moths from Cloudstep Orchard recently changed their route')],
     },
     {
       id: 'mistpine-forest', label: s('雾杉林', 'Mistpine Forest'), connectedTo: s('月线车厢', 'Moonline Carriage'),
@@ -268,15 +279,16 @@ function worldMap(locale: Locale): StoryCartridge['initialMap'] {
       capabilities: ['local-shift', 'hot-meal', 'lodging', 'public-rest'],
       detail: s('退潮时木桥连起渔业、修网和乐器工坊。', 'At low tide, bridges link fishing, net-mending, and instrument workshops.'),
       routeHints: zh ? ['潮汐群岛', '群岛', '浅滩', '木栈桥', '渔网', '修网'] : ['Tidal Islands', 'islands', 'tidal flats', 'wooden bridge', 'fishing nets', 'net mending'],
-      facts: [s('修网和码头搬运在涨潮前结算', 'Net mending and landing work pay before high tide'), s('清晨演出和公共灶台是主要社交场所', 'Dawn performances and the public stove are social gathering places'), s('涨潮后可住桥头客舍或搭月线离开', 'After high tide, use the bridgehead guesthouse or leave by Moonline')],
+      facts: [s('修网和码头搬运在涨潮前结算', 'Net mending and landing work pay before high tide'), s('清晨演出和公共灶台是主要社交场所', 'Dawn performances and the public stove are social gathering places'), s('涨潮后可住桥头客舍或搭月线离开', 'After high tide, use the bridgehead guesthouse or leave by Moonline'), s('芦水渡村的木水闸控制一条补给水路', 'A wooden lock gate at Reedwater Crossing controls one supply route')],
     },
     {
       id: 'far-lantern-institute', label: s('远灯研修院', 'Far Lantern Institute'), connectedTo: s('月线车厢', 'Moonline Carriage'),
       capabilities: ['local-shift', 'hot-meal', 'lodging', 'public-rest'],
       detail: s('只招收成年人的职业与实用魔法研修院。', 'An adult institute for trades and practical magic.'),
       routeHints: zh ? ['远灯研修院', '研修院', '工坊', '陶轮', '修理台', '观测仪'] : ['Far Lantern Institute', 'institute', 'workshop', 'pottery wheel', 'repair bench', 'observatory instruments'],
-      facts: [s('夜间工坊会发布修理与记录工作', 'Night workshops post repair and recording jobs'), s('开放讲座和公共工作台允许访客参加', 'Open lectures and shared benches welcome adult visitors'), s('空余客房每晚十枚钱币', 'Available guest rooms cost ten coin per night')],
+      facts: [s('夜间工坊会发布修理与记录工作', 'Night workshops post repair and recording jobs'), s('开放讲座和公共工作台允许访客参加', 'Open lectures and shared benches welcome adult visitors'), s('空余客房每晚十枚钱币', 'Available guest rooms cost ten coin per night'), s('天气记录来自风玻璃崖，修复用旧石件来自旧石坑花园', 'Weather records arrive from Windglass Cliffs and restoration stone from Old Quarry Gardens')],
     },
+    ...wanderlightExpansionMap(locale),
   ]
 }
 
@@ -298,6 +310,8 @@ function make(locale: Locale): StoryCartridge {
 
   const v1Turns = wanderlightV1Content(locale)
   const v1Outcomes = wanderlightV1Outcomes(locale)
+  const expansionTurns = wanderlightExpansionTurns(locale)
+  const expansionDirector = wanderlightExpansionDirector(locale)
   const miraOpeningTurn = {
     match: zh ? ['种荚', '短发', '帮'] : ['seed', 'short-haired', 'help'],
     content: miraDebut,
@@ -330,6 +344,7 @@ function make(locale: Locale): StoryCartridge {
   }
 
   const deterministicChoiceTurns: NonNullable<StoryCartridge['deterministicChoiceTurns']> = [
+    ...expansionTurns.deterministic,
     {
       action: s('帮媛夕把木箱送上月线', 'Help Mira load the crate onto the Moonline'),
       when: { locations: [s('灯湾码头', 'Lantern Quay')], characterIds: ['mira-voss'], jobs: [{ id: 'mira-seed-crate', statuses: ['offered', 'accepted'] }] },
@@ -416,9 +431,10 @@ function make(locale: Locale): StoryCartridge {
     sceneImageAvoid: 'opening quay, same train exterior, three waiting silhouettes, generic rain street, centered avatar portrait',
     transitionAnchor: s('月线车厢或灯湾月台', 'the Moonline carriage or Lantern Quay platform'),
     imageDirector: { maxQuietTurns: 2, softCooldownTurns: 1, guaranteedTriggers: ['new-location', 'relationship-change', 'character-expression'], softTriggers: ['party-change', 'objective-change', 'chapter-checkpoint'] },
-    director: { mode: 'open-world', fixedWorldRules: [s('所有可亲密角色明确为 24 岁以上成年人。', 'Every intimate character is explicitly aged 24 or older.'), s('人物只知道亲历或被告知的事实，约定与边界持续存在。', 'Characters know only witnessed or told facts; promises and boundaries persist.'), s('长期角色使用稳定 id，固化身份不能静默替换。', 'Recurring characters use stable ids and anchored identities cannot be silently replaced.'), s('跨地区移动先经过月线车厢或月台。', 'Cross-region travel passes through the Moonline carriage or platform.'), s('关系变化引用可见事件，不使用隐藏好感值。', 'Relationship changes cite visible events, not a hidden affection score.')], generationRules: [s('可创造符合当前地区的成年 NPC、工作和邀请。', 'You may create adult NPCs, jobs and invitations appropriate to the region.'), s('新 NPC 正式登场时使用稳定 id 和英文视觉身份字段。', 'A new NPC formal debut uses a stable id and English visual identity fields.'), s('暧昧来自共同活动、同意和边界，不描写露骨性行为。', 'Flirtation grows from shared activity, consent and boundaries, never explicit sex.'), s('每回合改变一项权威事实。', 'Every turn changes one authoritative fact.'), s('叙事先写清人物、动作与因果；质感来自可见细节和潜台词，不使用晦涩隐喻或幕后术语。', 'Narration makes actors, actions, and causality clear; texture comes from observable detail and subtext, never obscure metaphor or design jargon.'), s('每次最多引入一个陌生世界词，并立刻通过外形、用途或现场反应自然说明。', 'Introduce at most one unfamiliar world term at a time and explain it immediately through appearance, function, or an observable reaction.')], choiceIntents: [s('跟随某人或加深关系', 'follow someone or deepen a relationship'), s('探索地点或接受工作', 'explore a place or accept work'), s('保护时间、资源或边界', 'protect time, resources or a boundary')], maxActiveThreads: 3 },
-    dangerDirector: { minSafeTurns: 3, maxSafeTurns: 5, cooldownTurns: 3, escalationStats: ['energy', 'coin', 'renown'], threatPalette: [s('末班月线突然取消', 'the last Moonline is cancelled'), s('私人邀请被公开复述', 'a private invitation is repeated publicly'), s('银雨封闭葡萄丘道路', 'silver rain closes the vineyard road'), s('夜市雇主拒绝按约支付', 'a night-market employer withholds payment')], methods: [s('先问清楚发生了什么', 'Ask what happened first'), s('冒险继续原来的计划', 'Risk carrying on with the plan'), s('先退一步，换个办法', 'Step back and try another way')], legacyMethods: [['询问并理解警告', '承担代价保护承诺', '撤退、改道或设定边界'], ['ask for context', 'protect a promise at a cost', 'withdraw, reroute or set a boundary']], physicalCombat: 'none', resolution: { skill: s('判断', 'Judgment'), modifier: 2, dcBySeverity: [7, 9, 11, 13, 15], fallbackCosts: [{ statId: 'energy', operation: 'remove', amount: 12 }] } },
-    initialFacts: { all_intimate_characters_adult: true, dynamic_identity_trial: true, moonline_stamps_used: 0, world_day: 1, jobs_completed: 0, meals_eaten: 0, nights_slept: 0, carriage_rests: 0, exhaustion_recoveries: 0 },
+    presetEventDirector: { events: wanderlightPresetEvents(locale) },
+    director: { mode: 'open-world', fixedWorldRules: [s('所有可亲密角色明确为 24 岁以上成年人。', 'Every intimate character is explicitly aged 24 or older.'), s('人物只知道亲历或被告知的事实，约定与边界持续存在。', 'Characters know only witnessed or told facts; promises and boundaries persist.'), s('长期角色使用稳定 id，固化身份不能静默替换。', 'Recurring characters use stable ids and anchored identities cannot be silently replaced.'), s('跨地区移动先经过月线车厢或月台。', 'Cross-region travel passes through the Moonline carriage or platform.'), s('关系变化引用可见事件，不使用隐藏好感值。', 'Relationship changes cite visible events, not a hidden affection score.'), ...expansionDirector.fixedRules], generationRules: [s('可创造符合当前地区的成年 NPC、工作和邀请。', 'You may create adult NPCs, jobs and invitations appropriate to the region.'), s('新 NPC 正式登场时使用稳定 id 和英文视觉身份字段。', 'A new NPC formal debut uses a stable id and English visual identity fields.'), s('暧昧来自共同活动、同意和边界，不描写露骨性行为。', 'Flirtation grows from shared activity, consent and boundaries, never explicit sex.'), s('每回合改变一项权威事实。', 'Every turn changes one authoritative fact.'), s('叙事先写清人物、动作与因果；质感来自可见细节和潜台词，不使用晦涩隐喻或幕后术语。', 'Narration makes actors, actions, and causality clear; texture comes from observable detail and subtext, never obscure metaphor or design jargon.'), s('每次最多引入一个陌生世界词，并立刻通过外形、用途或现场反应自然说明。', 'Introduce at most one unfamiliar world term at a time and explain it immediately through appearance, function, or an observable reaction.'), ...expansionDirector.generationRules], choiceIntents: [s('跟随某人或加深关系', 'follow someone or deepen a relationship'), s('探索地点或接受工作', 'explore a place or accept work'), s('保护时间、资源或边界', 'protect time, resources or a boundary')], maxActiveThreads: 3 },
+    dangerDirector: { minSafeTurns: 3, maxSafeTurns: 5, cooldownTurns: 3, escalationStats: ['energy', 'coin', 'renown'], threatPalette: [s('末班月线突然取消', 'the last Moonline is cancelled'), s('私人邀请被公开复述', 'a private invitation is repeated publicly'), s('银雨封闭葡萄丘道路', 'silver rain closes the vineyard road'), s('夜市雇主拒绝按约支付', 'a night-market employer withholds payment'), ...expansionDirector.threats], methods: [s('先问清楚发生了什么', 'Ask what happened first'), s('冒险继续原来的计划', 'Risk carrying on with the plan'), s('先退一步，换个办法', 'Step back and try another way')], legacyMethods: [['询问并理解警告', '承担代价保护承诺', '撤退、改道或设定边界'], ['ask for context', 'protect a promise at a cost', 'withdraw, reroute or set a boundary']], physicalCombat: 'none', resolution: { skill: s('判断', 'Judgment'), modifier: 2, dcBySeverity: [7, 9, 11, 13, 15], fallbackCosts: [{ statId: 'energy', operation: 'remove', amount: 12 }] } },
+    initialFacts: { all_intimate_characters_adult: true, dynamic_identity_trial: true, world_expansion_v2: true, moonline_stamps_used: 0, world_day: 1, jobs_completed: 0, meals_eaten: 0, nights_slept: 0, carriage_rests: 0, exhaustion_recoveries: 0 },
     statDefinitions: [
       {
         id: 'energy', label: s('精力', 'Energy'), min: 0, max: 100, initial: 72, display: 'bar', inverse: true, warningAt: 28, dangerAt: 8, maxDelta: 24, domainMaxDelta: 36,
@@ -448,6 +464,7 @@ function make(locale: Locale): StoryCartridge {
       { match: zh ? ['剪枝', '葡萄行', '找'] : ['pruning shears', 'vine rows', 'follow'], content: dynamicDebut, imagePrompt: 'Silverleaf Vineyard at night, formal first identity anchor of one adult trellis repairer beside a rain-bent vine, jaw-length deep-golden curls, narrow brass leaf clip at left temple, stone-blue cape, no other readable face, no text, no UI, 4:3', imageSubject: 'others', imageCharacterId: 'talin-rey' },
       ...v1Turns,
       ...v1Outcomes,
+      ...expansionTurns.demo,
     ],
   }
 }
