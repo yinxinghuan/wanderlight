@@ -89,9 +89,9 @@ function dangerCheck(save: StorySave, cartridge: StoryCartridge, actionId: strin
 export function buildDangerDirective(save: StorySave, cartridge: StoryCartridge, actionId: string): DangerDirective | undefined {
   const config = cartridge.dangerDirector
   if (!config) return undefined
-  if (save.scene < Math.max(0, Math.floor(config.graceScenes ?? 6))) return undefined
   const state = normalizeDangerState(save.danger)
   const risk = riskSeverity(save, cartridge)
+  if (state.phase === 'calm' && risk < 5 && save.scene < Math.max(0, Math.floor(config.graceScenes ?? 6))) return undefined
   const baseSeverity = Math.max(risk, 2 + stableHash(`${cartridge.id}:severity:${state.cycle}`) % 2)
   const severity = clamp(state.severity > 1 ? Math.max(state.severity, risk) : baseSeverity, 1, 5)
   const threat = state.currentThreat ?? selectThreat(save, cartridge, state.cycle)

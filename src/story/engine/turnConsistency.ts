@@ -181,6 +181,33 @@ function visibleProse(parsed: ParsedScene): string {
     .map((block) => block.text).join('\n')
 }
 
+function immediateThreatSentence(prose: string, locale: StoryCartridge['locale']): string | undefined {
+  const sentences = prose.split(/(?<=[。！？.!?])|\n+/).map((sentence) => sentence.trim()).filter(Boolean)
+  const resolved = locale === 'zh'
+    ? /(?:已经|已|终于)?(?:被)?(?:击退|制服|赶走|阻止|化解|解除|撤退|逃走|离开|投降|结束)|威胁(?:已经|已)?消失/
+    : /\b(?:was|were|has been|have been)?\s*(?:repelled|captured|stopped|resolved|defused|defeated)|\b(?:retreated|withdrew|fled|surrendered|ended)\b/i
+  const active = locale === 'zh'
+    ? /(?:(?:袭击者|攻击者|敌人|追兵|援兵|守卫|同伴|帮手)[^。！？]{0,30}(?:赶来|冲来|逼近|包围|围攻|袭击|攻击|闯入|营救|解救|救走|救人|抢人|劫走)|(?:突然|此时|这时|正在|正要|试图|准备|开始)[^。！？]{0,36}(?:袭击|攻击|包围|围攻|闯入|营救|解救|救走|救人|抢人|劫走))/
+    : /\b(?:attackers?|enemies|pursuers?|reinforcements?|guards?|companions?|allies?)\b.{0,80}\b(?:arrive|charge|approach|surround|attack|assault|raid|break in|rescue|free|seize|take back)\b|\b(?:suddenly|now|currently|trying to|preparing to|begin(?:s|ning)? to)\b.{0,80}\b(?:attack|assault|surround|raid|break in|rescue|free|seize|take back)\b/i
+  return sentences.find((sentence) => active.test(sentence) && !resolved.test(sentence))
+}
+
+function threadTerms(value: string, locale: StoryCartridge['locale']): string[] {
+  if (locale === 'en') {
+    const stop = new Set(['about', 'after', 'again', 'against', 'before', 'being', 'could', 'their', 'there', 'these', 'those', 'would'])
+    return [...new Set(value.toLocaleLowerCase().match(/[a-z]{4,}/g) ?? [])].filter((word) => !stop.has(word)).slice(0, 12)
+  }
+  const known = value.match(/(?:袭击者|攻击者|敌人|追兵|援兵|守卫|同伴|帮手|俘虏|人质|营救|解救|救走|抢人|劫走|围攻|包围|闯入|取消|封路|拒付)/g) ?? []
+  const compact = clean(value)
+  const pairs = Array.from({ length: Math.max(0, compact.length - 1) }, (_, index) => compact.slice(index, index + 2))
+  return [...new Set([...known, ...pairs])].slice(0, 18)
+}
+
+function threadGroundedInProse(thread: string, prose: string, locale: StoryCartridge['locale']): boolean {
+  const normalizedProse = clean(prose)
+  return threadTerms(thread, locale).some((term) => normalizedProse.includes(clean(term)))
+}
+
 function newTaskCue(locale: StoryCartridge['locale']): RegExp {
   return locale === 'zh'
     ? /你(?:现在)?(?:的)?(?:新|下一项|接下来(?:的)?)任务(?:是|为|：|:)|(?:接受|接下|领取|承担|受命执行|开始执行)[^。！？\n]{0,18}(?:任务|委托)|(?:交给|委托给|安排给)你[^。！？\n]{0,18}(?:任务|委托)/
@@ -404,6 +431,8 @@ export function validateTurnConsistency(
   const mapUpdates = parsed.commands.filter((command) => command.type === 'map_update')
   const choices = validChoices(parsed)
   const prose = visibleProse(parsed)
+  const encounters = parsed.commands.filter((command): command is Extract<ParsedCommand, { type: 'encounter' }> => command.type === 'encounter')
+  const emergingThreat = immediateThreatSentence(prose, cartridge.locale)
 
   validateCharacterContinuity(save, parsed, cartridge).forEach((violation) => violations.add(violation))
 
@@ -428,6 +457,23 @@ export function validateTurnConsistency(
 
   if (!parsed.commands.some((command) => command.type === 'session_end') && !choices.length) violations.add('turn.requires_actionable_choices')
   if (choices.some((choice) => stalePlaceChoice(choice, location, save))) violations.add('choices.cannot_act_in_stale_location')
+
+  if (emergingThreat && !encounters.length) violations.add('turn.visible_immediate_threat_requires_encounter')
+  if (encounters.some((encounter) => encounter.phase !== 'resolution'
+    && (!encounter.kind || !threadGroundedInProse(encounter.kind, prose, cartridge.locale)))) {
+    violations.add('turn.encounter_must_match_visible_threat')
+  }
+  if (save.danger.phase !== 'calm') {
+    if (!encounters.length) violations.add('turn.active_threat_requires_continuation')
+    else {
+      const activeThreat = save.danger.currentThreat ?? ''
+      const sameThread = Boolean(activeThreat) && encounters.some((encounter) => Boolean(encounter.kind)
+        && threadGroundedInProse(activeThreat, encounter.kind ?? '', cartridge.locale))
+      if (!sameThread || !threadGroundedInProse(activeThreat, prose, cartridge.locale)) {
+        violations.add('turn.active_threat_cannot_disappear')
+      }
+    }
+  }
 
   if (newTaskCue(cartridge.locale).test(prose) && !parsed.commands.some((command) => command.type === 'state')) violations.add('turn.new_task_requires_objective_state')
 

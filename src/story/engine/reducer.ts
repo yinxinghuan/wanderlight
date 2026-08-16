@@ -300,37 +300,45 @@ function shortChoiceContext(value: string, maxLength: number): string {
   return clean.length > maxLength ? `${clean.slice(0, maxLength - 1).trim()}…` : clean
 }
 
-export function createRecoveryChoices(save: Pick<StorySave, 'scene' | 'location' | 'objective' | 'partyMemberIds'>, cartridge: StoryCartridge): StorySave['choices'] {
+export function createRecoveryChoices(
+  save: Pick<StorySave, 'scene' | 'location' | 'objective'> & Partial<Pick<StorySave, 'danger'>>,
+  cartridge: StoryCartridge,
+): StorySave['choices'] {
   const location = shortChoiceContext(save.location, cartridge.locale === 'zh' ? 14 : 24)
   const objective = shortChoiceContext(save.objective, cartridge.locale === 'zh' ? 32 : 64).replace(/[。.!！?？；;]+$/u, '')
-  const hasParty = save.partyMemberIds.length > 0
-  const labels = cartridge.locale === 'zh'
-    ? [
-        ...(objective ? [objective] : []),
-        `观察${location || '周围'}的新变化`,
-        ...(hasParty ? ['和同行者商量下一步'] : []),
-      ]
-    : [
-        ...(objective ? [objective] : []),
-        `Observe what changed around ${location || 'this place'}`,
-        ...(hasParty ? ['Discuss the next move with your companions'] : []),
-      ]
+  const activeThreat = save.danger && save.danger.phase !== 'calm'
+  const labels = activeThreat && cartridge.dangerDirector
+    ? [...cartridge.dangerDirector.methods]
+    : objective
+      ? [objective]
+      : cartridge.locale === 'zh'
+        ? [`观察${location || '周围'}的新变化`]
+        : [`Observe what changed around ${location || 'this place'}`]
   return [...new Set(labels)].map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
 }
 
 /** Old saves wrapped the active objective in an abstract “trace a clue” label
- * and placed generic observation first. Restore the objective as the direct
- * action while retaining observation as the secondary fallback. */
+ * or mixed a live objective with generic observation/discussion buttons.
+ * Keep only the unresolved concrete thread; use observation only when no
+ * objective exists, and use world-native danger methods during active threat. */
 export function repairLegacyObjectiveRecoveryChoices(save: StorySave, cartridge: StoryCartridge): StorySave {
   const wrappedObjective = cartridge.locale === 'zh'
     ? /^追查“.+”的线索$/u
     : /^Trace a clue about “.+”$/i
-  if (!save.choices.some((choice) => wrappedObjective.test(choice.label.trim()))) return save
+  const objective = shortChoiceContext(save.objective, cartridge.locale === 'zh' ? 32 : 64).replace(/[。.!！?？；;]+$/u, '')
   const genericRecovery = cartridge.locale === 'zh'
     ? /^(?:观察.+的新变化|追查“.+”的线索|和同行者商量下一步)$/u
     : /^(?:Observe what changed around .+|Trace a clue about “.+”|Discuss the next move with your companions)$/i
   const replacement = createRecoveryChoices(save, cartridge)
-  const choices = save.choices.every((choice) => genericRecovery.test(choice.label.trim()))
+  const allLegacyRecovery = save.choices.length > 0 && save.choices.every((choice) => (
+    genericRecovery.test(choice.label.trim()) || Boolean(objective && choice.label.trim() === objective)
+  ))
+  const needsRepair = allLegacyRecovery && (
+    save.choices.length !== replacement.length
+    || save.choices.some((choice, index) => choice.label !== replacement[index]?.label)
+  )
+  if (!needsRepair && !save.choices.some((choice) => wrappedObjective.test(choice.label.trim()))) return save
+  const choices = allLegacyRecovery
     ? replacement
     : save.choices.map((choice) => wrappedObjective.test(choice.label.trim())
       ? { ...choice, label: replacement[0]?.label ?? choice.label }

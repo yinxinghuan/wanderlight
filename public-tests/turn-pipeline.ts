@@ -77,7 +77,7 @@ const movedReplyless = applyParsedScene(save, parseStoryProtocol(`你搭上月�
 [scene_location: location="${destination.label}"]`, 'zh'), cartridge, save.choices[0].label)
 assert.equal(movedReplyless.location, destination.label, 'replyless transition commits the authoritative new map node')
 assert.ok(movedReplyless.choices.length >= 1, 'a replyless map transition derives exits from the destination instead of returning an empty tray')
-assert.ok(movedReplyless.choices.some((choice) => choice.label.includes(destination.label)), 'destination-derived replies name the current map node')
+assert.deepEqual(movedReplyless.choices.map((choice) => choice.label), [save.objective.replace(/[。.!！?？；;]+$/u, '')], 'replyless transition keeps the unresolved objective instead of adding a generic location detour')
 
 let continuityRuns = 0
 for (const locale of ['zh', 'en'] as const) {
@@ -94,9 +94,9 @@ for (const locale of ['zh', 'en'] as const) {
   for (const target of localizedCartridge.initialMap.filter((node) => node.label !== localizedSave.location)) {
     const transitioned = applyParsedScene(localizedSave, parseStoryProtocol(`${locale === 'zh' ? `你已经抵达${target.label}。` : `You arrive at ${target.label}.`}
 [map_update: location="${target.label}"]
-[scene_location: location="${target.label}"]`, locale), localizedCartridge, localizedSave.choices[0].label)
+    [scene_location: location="${target.label}"]`, locale), localizedCartridge, localizedSave.choices[0].label)
     assert.ok(transitioned.choices.length >= 1, `${locale} transition to ${target.label} remains playable`)
-    assert.ok(transitioned.choices.some((choice) => choice.label.includes(target.label)), `${locale} transition fallback uses ${target.label}`)
+    assert.deepEqual(transitioned.choices.map((choice) => choice.label), [localizedSave.objective.replace(/[。.!！?？；;]+$/u, '')], `${locale} transition fallback keeps the unresolved objective`)
     continuityRuns += 1
   }
 }

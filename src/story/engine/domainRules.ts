@@ -167,9 +167,9 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
     continuation: accepted
       ? candidate.rule.successContinuation ?? 'replace'
       : candidate.rule.rejectionContinuation ?? 'replace',
-    successChoices: [...(reasons.length && candidate.rule.rejectionChoices
+    successChoices: [...((reasons.length && candidate.rule.rejectionChoices
       ? candidate.rule.rejectionChoices
-      : candidate.rule.successChoices)],
+      : candidate.rule.successChoices) ?? [])],
   }
 }
 

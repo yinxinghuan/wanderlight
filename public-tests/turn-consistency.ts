@@ -94,7 +94,8 @@ const recoveryWithParty = {
   partyMemberIds: [...playableRecovery.partyMemberIds, 'qa-companion'],
 }
 const confirmedWithParty = applyConsistencyRecoverySelection(recoveryWithParty, cartridge, confirmAction, confirmSelection!)
-equal(confirmedWithParty.choices.length, 3, 'all grounded recovery exits remain available without the failed action')
+equal(confirmedWithParty.choices.length, 1, 'a live objective excludes generic observation and discussion exits')
+equal(confirmedWithParty.choices[0]?.label, '确认今晚的工作路线', 'the unresolved objective itself remains the executable exit')
 
 const pauseAction = playableRecovery.choices[1].label
 const pauseSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction)
