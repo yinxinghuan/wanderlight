@@ -10,6 +10,9 @@ const cartridge = listCartridges('zh')[0]
 const initial = createInitialSave(cartridge)
 const englishCartridge = listCartridges('en')[0]
 const englishInitial = createInitialSave(englishCartridge)
+const englishOffer = parseStoryProtocol('The supervisor says the completed packing work will pay you 8 coins.\n[job: action="offer" id="english-crates" label="Pack three cases" employer="Supervisor" wage="8"]', 'en')
+equal(validatePaymentConsistency(englishInitial, englishOffer, englishCartridge).length, 0, 'English future-tense wage offer must remain a promise, not a completed receipt')
+equal(applyParsedScene(englishInitial, englishOffer, englishCartridge, 'Ask about packing work').stats.coin, 6, 'English future-tense wage offer cannot pay early')
 
 const offered = parseStoryProtocol(`媛夕说：“再帮我把木箱送上车，我付你八枚钱币。”
 [job: action="offer" id="mira-seed-crate" label="把种荚木箱送上月线" employer="媛夕" wage="8"]`, 'zh')
@@ -78,6 +81,12 @@ equal(validatePaymentConsistency(englishInitial, parseStoryProtocol('Celeste ear
 equal(validatePaymentConsistency(initial, parseStoryProtocol('询问不会替你接受工作，也不会提前获得报酬。', 'zh'), cartridge).length, 0, '明确否定的收入不能误判成已收款')
 equal(validatePaymentConsistency(englishInitial, parseStoryProtocol('Asking does not accept the job, and you will not receive wages yet.', 'en'), englishCartridge).length, 0, 'English denied wages cannot be mistaken for receipt')
 equal(validatePaymentConsistency(englishInitial, parseStoryProtocol('No shift or payment is committed until you take and finish the work.', 'en'), englishCartridge).length, 0, 'The letters “if” inside “shift” cannot create a false payment promise')
+const futureWageZh = canonicalizePaymentMetadata(afterOffer, parseStoryProtocol('你和负责人确认了封装顺序；下一步是装好三只木箱并领取工钱，八枚钱币仍要等全部装好后结算。', 'zh'), cartridge, '确认封装顺序')
+equal(futureWageZh.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, '未来领取工资的计划不能被误判为已经结算')
+equal(applyParsedScene(afterOffer, futureWageZh, cartridge, '确认封装顺序').stats.coin, 6, '未来工资不能提前增加钱币')
+const futureWageEn = canonicalizePaymentMetadata(englishInitial, parseStoryProtocol('The next step is to finish the cases and collect the wage; five coins remain due only after completion.', 'en'), englishCartridge, 'Confirm the packing order')
+equal(futureWageEn.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, 'English future wage plan cannot settle a contract early')
+equal(applyParsedScene(englishInitial, futureWageEn, englishCartridge, 'Confirm the packing order').stats.coin, 6, 'English future wage cannot credit coins early')
 
 const savedVaguePayment = {
   ...afterOffer,

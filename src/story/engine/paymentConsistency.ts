@@ -16,7 +16,13 @@ function visiblePaymentSignals(locale: StoryCartridge['locale']) {
   const deniedReceipt = locale === 'zh'
     ? /(?:不|没有|未|不会|不能|并未|尚未|无需)[^。！？]{0,16}(?:赚得|获得|拿到|领到|收到|挣到|结清|发放|领取|递给|交给|付给|支付给|给了|数给|塞给|到账|到手)/
     : /(?:did not|didn't|have not|haven't|has not|hasn't|was not|were not|will not|won't|cannot|can't|no).{0,24}(?:earn|receive|collect|get paid|pay|wage|salary|compensation)/i
-  return { received, compensationReceived, deniedReceipt }
+  // A future plan can contain the same verbs as a completed receipt (for
+  // example, “next, collect the wage” or “still due after completion”). It
+  // must not settle a contract until the prose says the transfer happened.
+  const pendingReceipt = locale === 'zh'
+    ? /(?:(?:下一步|接下来|之后|以后|稍后|待会)[^。！？]{0,48}(?:领取|收到|拿到|领到|结算|发放)(?:[^。！？]{0,12}(?:报酬|工钱|薪水|工资|酬劳|钱币))?|(?:仍要|还要|尚要|仍需|还需|需要|需)?等[^。！？]{0,40}(?:结算|领取|收到|拿到|领到|发放))/
+    : /(?:(?:next(?: step)?|later|afterwards)[^.!?]{0,72}(?:collect|receive|get paid|be paid|settle|payment|wages?|salary|compensation)|(?:remains?|is|are|still)[^.!?]{0,24}(?:due|unpaid|to be paid))/i
+  return { received, compensationReceived, deniedReceipt, pendingReceipt }
 }
 
 function chineseInteger(value: string): number | undefined {
@@ -113,20 +119,24 @@ export function canonicalizePaymentMetadata(
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .map((block) => block.text).join('\n')
   const sentences = prose.split(/(?<=[。！？.!?])|\n+/).map((sentence) => sentence.trim()).filter(Boolean)
-  const { received, compensationReceived, deniedReceipt } = visiblePaymentSignals(cartridge.locale)
+  const { received, compensationReceived, deniedReceipt, pendingReceipt } = visiblePaymentSignals(cartridge.locale)
   const spent = cartridge.locale === 'zh'
     ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|你(?:用|拿出|掏出|交出)[^。！？]{0,28}(?:支付|付了|交了|付清|结清|全部花掉|全部花完|投入)|你[^。！？]{0,24}钱(?:币)?(?:(?:全|都)部|都)(?:花掉|花完|用光)|从你[^。！？]{0,16}扣除)/
     : /(?:you paid|you (?:used|took out|handed over).{0,32}(?:to pay|as payment|spent it all)|you spent.{0,32}(?:coins?|money)|was deducted from you)/i
   const promise = cartridge.locale === 'zh'
     ? /(?:如果|等你?|(?:完成|做完|搬完|送完|修完)[^。！？]{0,12}(?:(?:之后|以后)|后(?=[，,\s我你她他会将再])|再)|再?帮(?:我|忙)?)[^。！？]{0,48}(?:会|将|给你|付你|报酬|工钱)/
-    : /(?:(?:\bif\b|\bwhen\b|\bafter\b).{0,64}(?:will pay|pay you|wage|payment)|\bhelp\b.{0,64}(?:i(?:'ll| will) pay|pay you))/i
+    : /(?:(?:\bif\b|\bwhen\b|\bafter\b).{0,64}(?:will pay|pay you|(?:wage|payment).{0,16}(?:will be|is due|becomes due))|\bhelp\b.{0,64}(?:i(?:'ll| will) pay|pay you)|\b(?:will|shall)\s+pay\b|\bwill\s+(?:receive|collect|get paid)\b)/i
   const completedTransfer = /(?:工作|任务|整理|搬运|装箱|修理|运送)[^。！？]{0,12}(?:完成|做完|搬完|送完|修完)后[，,][^。！？]{0,36}(?:递给你|交给你|付给你|给了你|塞给你|结清|收到)/
   const workContext = /(?:工作|短工|帮忙|干活|这份活|任务|报酬|工钱|薪水|工资|酬劳|搬|修|送|封好|装箱|work|job|shift|help|task|payment|pay|wages?|salary|compensation|repair|carry|deliver|pack)/i.test(prose)
   const receivedSentence = sentences.find((sentence) => (
     (currencyPattern.test(sentence) && received.test(sentence)) || compensationReceived.test(sentence)
-  ) && !deniedReceipt.test(sentence) && (!promise.test(sentence) || (completedTransfer.test(sentence) && !/(?:等你|如果|会|将)/.test(sentence))))
+  ) && !deniedReceipt.test(sentence) && !pendingReceipt.test(sentence)
+    && (!promise.test(sentence) || (completedTransfer.test(sentence) && !/(?:等你|如果|会|将)/.test(sentence))))
   const spentSentence = sentences.find((sentence) => currencyPattern.test(sentence) && spent.test(sentence) && !promise.test(sentence))
-  const promisedSentence = sentences.find((sentence) => (currencyPattern.test(sentence) || compensationPattern.test(sentence)) && promise.test(sentence) && !received.test(sentence) && !compensationReceived.test(sentence))
+  // Future-tense offers commonly reuse transfer verbs ("will pay you"). The
+  // promise cue is authoritative here; completed receipts are handled again
+  // below and may legitimately produce an offer+settlement in one turn.
+  const promisedSentence = sentences.find((sentence) => (currencyPattern.test(sentence) || compensationPattern.test(sentence)) && promise.test(sentence))
   let commands = parsed.commands
   const jobs = () => commands.filter((command): command is JobCommand => command.type === 'job')
   const widgets = () => commands.filter((command): command is WidgetCommand => command.type === 'widget' && command.id === 'coin')
@@ -179,20 +189,21 @@ export function validatePaymentConsistency(save: StorySave, parsed: ParsedScene,
     .filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
     .map((block) => block.text).join('\n')
   const sentences = prose.split(/(?<=[。！？.!?])|\n+/).map((sentence) => sentence.trim()).filter(Boolean)
-  const { received, compensationReceived, deniedReceipt } = visiblePaymentSignals(cartridge.locale)
+  const { received, compensationReceived, deniedReceipt, pendingReceipt } = visiblePaymentSignals(cartridge.locale)
   const spent = cartridge.locale === 'zh'
     ? /(?:你(?:当场)?(?:支付|付了|交了|付清|结清)|你(?:用|拿出|掏出|交出)[^。！？]{0,28}(?:支付|付了|交了|付清|结清|全部花掉|全部花完|投入)|你[^。！？]{0,24}钱(?:币)?(?:(?:全|都)部|都)(?:花掉|花完|用光)|从你[^。！？]{0,16}扣除)/
     : /(?:you paid|you (?:used|took out|handed over).{0,32}(?:to pay|as payment|spent it all)|you spent.{0,32}(?:coins?|money)|was deducted from you)/i
   const promise = cartridge.locale === 'zh'
     ? /(?:如果|等你?|(?:完成|做完|搬完|送完|修完)[^。！？]{0,12}(?:(?:之后|以后)|后(?=[，,\s我你她他会将再])|再)|再?帮(?:我|忙)?)[^。！？]{0,48}(?:会|将|给你|付你|报酬|工钱)/
-    : /(?:(?:\bif\b|\bwhen\b|\bafter\b).{0,64}(?:will pay|pay you|wage|payment)|\bhelp\b.{0,64}(?:i(?:'ll| will) pay|pay you))/i
+    : /(?:(?:\bif\b|\bwhen\b|\bafter\b).{0,64}(?:will pay|pay you|(?:wage|payment).{0,16}(?:will be|is due|becomes due))|\bhelp\b.{0,64}(?:i(?:'ll| will) pay|pay you)|\b(?:will|shall)\s+pay\b|\bwill\s+(?:receive|collect|get paid)\b)/i
   const completedTransfer = /(?:工作|任务|整理|搬运|装箱|修理|运送)[^。！？]{0,12}(?:完成|做完|搬完|送完|修完)后[，,][^。！？]{0,36}(?:递给你|交给你|付给你|给了你|塞给你|结清|收到)/
   const workContext = /(?:工作|短工|帮忙|干活|这份活|任务|报酬|工钱|薪水|工资|酬劳|搬|修|送|封好|装箱|work|job|shift|help|task|payment|pay|wages?|salary|compensation|repair|carry|deliver|pack)/i.test(prose)
   const receivedSentence = sentences.find((sentence) => (
     (currencyPattern.test(sentence) && received.test(sentence)) || compensationReceived.test(sentence)
-  ) && !deniedReceipt.test(sentence) && (!promise.test(sentence) || (completedTransfer.test(sentence) && !/(?:等你|如果|会|将)/.test(sentence))))
+  ) && !deniedReceipt.test(sentence) && !pendingReceipt.test(sentence)
+    && (!promise.test(sentence) || (completedTransfer.test(sentence) && !/(?:等你|如果|会|将)/.test(sentence))))
   const spentSentence = sentences.find((sentence) => currencyPattern.test(sentence) && spent.test(sentence) && !promise.test(sentence))
-  const promisedSentence = sentences.find((sentence) => (currencyPattern.test(sentence) || compensationPattern.test(sentence)) && promise.test(sentence) && !received.test(sentence) && !compensationReceived.test(sentence))
+  const promisedSentence = sentences.find((sentence) => (currencyPattern.test(sentence) || compensationPattern.test(sentence)) && promise.test(sentence))
   const widgets = parsed.commands.filter((command): command is WidgetCommand => command.type === 'widget' && command.id === 'coin')
   const additions = widgets.filter((command) => commandDelta(command) > 0)
   const removals = widgets.filter((command) => commandDelta(command) < 0)

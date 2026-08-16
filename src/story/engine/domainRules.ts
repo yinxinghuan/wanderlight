@@ -28,7 +28,7 @@ function normalized(value: string): string {
 function isRestCommitment(value: string): boolean {
   const source = value.trim().toLocaleLowerCase()
   const chineseRest = /(?:休息|歇一会|小睡|睡一会|睡觉|打盹|眯一会|恢复呼吸|住一晚|租[^，。！？]{0,8}房|支付房费|付房费|订[^，。！？]{0,8}房|今天不再行动)/u.test(source)
-  const englishRest = /\b(?:rest|sleep|nap|doze)(?:ing)?\b|\b(?:take a break|catch my breath|stay for the night|rent (?:a )?room|pay (?:the )?room fee|book (?:a )?room|reserve (?:a )?room|stop for the day)\b/i.test(source)
+  const englishRest = /\b(?:rest|sleep|nap|doze)(?:ing)?\b|\b(?:take a break|catch my breath|stay (?:for )?(?:the night|overnight)|rent (?:a )?room|pay (?:for )?(?:(?:a|the) )?room(?: fee)?|book (?:a )?room|reserve (?:a )?room|stop for the day)\b/i.test(source)
   if (!chineseRest && !englishRest) return false
   const chineseNegation = /(?:不|别)(?:要|想|打算|准备|再)?(?:休息|睡|小睡|打盹|住下)/u.test(source)
   const englishNegation = /\b(?:do not|don't|not going to|won't|without|skip)\b.{0,24}\b(?:rest|sleep|nap|stay)\b/i.test(source)

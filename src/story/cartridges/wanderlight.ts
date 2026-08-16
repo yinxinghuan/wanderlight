@@ -143,7 +143,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'local-shift', intent: s('完成一份当地短工', 'complete a local shift'),
-        match: [s('接一份九十分钟短工（报酬 9 枚）', 'take a ninety-minute shift (9 coin)'), s('找一份短工', 'look for a short job'), s('做短工', 'take a local shift'), s('继续干活', 'keep working'), s('帮忙干活', 'help with the work'), s('完成这份工作', 'finish the job'), s('干完这份活', 'complete the shift'), s('结清工钱', 'collect my pay'), s('领取报酬', 'receive the payment')],
+        match: [s('接一份九十分钟短工（报酬 9 枚）', 'take a ninety-minute shift (9 coin)'), s('找一份短工', 'look for a short job'), s('再找一份短工', 'look for another short job'), s('另外找一份短工', 'find another short job'), s('做短工', 'take a local shift'), s('继续干活', 'keep working'), s('帮忙干活', 'help with the work'), s('完成这份工作', 'finish the job'), s('干完这份活', 'complete the shift'), s('结清工钱', 'collect my pay'), s('领取报酬', 'receive the payment')],
         repeatPolicy: {
           scope: 'location-day',
           reason: s('这个地点今天能立即结算的临时工作已经做完了。去新的地点查看工作，或休息到第二天再来。', 'You already completed the immediately available shift here today. Check another place for work, or return on a new day.'),

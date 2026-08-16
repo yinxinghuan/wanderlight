@@ -101,6 +101,8 @@ const englishFirst = resolveDomainAction(english, wanderlightEn, 'Take a ninety-
 assert.equal(englishFirst?.status, 'accepted', 'English short-job label must resolve')
 const englishAfter = applyParsedScene(english, parseStoryProtocol(englishFirst!.successText, 'en'), wanderlightEn, 'Take a ninety-minute shift (9 coin)', undefined, undefined, undefined, englishFirst)
 assert.equal(resolveDomainAction(englishAfter, wanderlightEn, 'Look for a short job')?.status, 'rejected', 'English repeat must be blocked in the same place and day')
+assert.equal(resolveDomainAction(englishAfter, wanderlightEn, 'Look for another short job')?.status, 'rejected', 'English free-input repeat wording must hit the same atomic repeat gate')
+assert.equal(resolveDomainAction(english, wanderlightEn, 'Pay for the room and stay overnight')?.status, 'rejected', 'English overnight wording must resolve through lodging preflight instead of falling through to the model')
 
 const poor = { ...createInitialSave(wanderlight), stats: { ...createInitialSave(wanderlight).stats, coin: 2 } }
 const rejectedRoom = resolveDomainAction(poor, wanderlight, '住一晚')
