@@ -6,7 +6,7 @@ import { aigramAdapter } from './adapters/aigram'
 import { mockAdapter } from './adapters/mock'
 import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
-import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, normalizeCharacterState, repairLegacyConsistencyRecovery, repairLegacyObjectiveRecoveryChoices, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, repairUnsettledContractPayment } from './engine/paymentConsistency'
 import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence, repairPersistedMapRouteHints } from './engine/turnConsistency'
@@ -139,6 +139,7 @@ function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge:
   } as StorySave, cartridge)), cartridge)
   normalized = repairLegacyDangerMethodChoices(normalized, cartridge)
   normalized = restoreDeterministicRecoveryChoice(normalized, cartridge)
+  normalized = repairLegacyObjectiveRecoveryChoices(normalized, cartridge)
   if (!normalized.sessionEnded && normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
   const floor = activeStatFloorRule(normalized, cartridge)
   if (!normalized.sessionEnded && floor) {

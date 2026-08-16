@@ -302,20 +302,45 @@ function shortChoiceContext(value: string, maxLength: number): string {
 
 export function createRecoveryChoices(save: Pick<StorySave, 'scene' | 'location' | 'objective' | 'partyMemberIds'>, cartridge: StoryCartridge): StorySave['choices'] {
   const location = shortChoiceContext(save.location, cartridge.locale === 'zh' ? 14 : 24)
-  const objective = shortChoiceContext(save.objective, cartridge.locale === 'zh' ? 18 : 32)
+  const objective = shortChoiceContext(save.objective, cartridge.locale === 'zh' ? 32 : 64).replace(/[。.!！?？；;]+$/u, '')
   const hasParty = save.partyMemberIds.length > 0
   const labels = cartridge.locale === 'zh'
     ? [
+        ...(objective ? [objective] : []),
         `观察${location || '周围'}的新变化`,
-        ...(objective ? [`追查“${objective}”的线索`] : []),
         ...(hasParty ? ['和同行者商量下一步'] : []),
       ]
     : [
+        ...(objective ? [objective] : []),
         `Observe what changed around ${location || 'this place'}`,
-        ...(objective ? [`Trace a clue about “${objective}”`] : []),
         ...(hasParty ? ['Discuss the next move with your companions'] : []),
       ]
   return [...new Set(labels)].map((label, index) => ({ id: `recovery-${save.scene}-${index}`, label }))
+}
+
+/** Old saves wrapped the active objective in an abstract “trace a clue” label
+ * and placed generic observation first. Restore the objective as the direct
+ * action while retaining observation as the secondary fallback. */
+export function repairLegacyObjectiveRecoveryChoices(save: StorySave, cartridge: StoryCartridge): StorySave {
+  const wrappedObjective = cartridge.locale === 'zh'
+    ? /^追查“.+”的线索$/u
+    : /^Trace a clue about “.+”$/i
+  if (!save.choices.some((choice) => wrappedObjective.test(choice.label.trim()))) return save
+  const genericRecovery = cartridge.locale === 'zh'
+    ? /^(?:观察.+的新变化|追查“.+”的线索|和同行者商量下一步)$/u
+    : /^(?:Observe what changed around .+|Trace a clue about “.+”|Discuss the next move with your companions)$/i
+  const replacement = createRecoveryChoices(save, cartridge)
+  const choices = save.choices.every((choice) => genericRecovery.test(choice.label.trim()))
+    ? replacement
+    : save.choices.map((choice) => wrappedObjective.test(choice.label.trim())
+      ? { ...choice, label: replacement[0]?.label ?? choice.label }
+      : choice)
+  const unique = choices.filter((choice, index, all) => all.findIndex((entry) => entry.label === choice.label) === index).slice(0, 5)
+  const recordId = `choices-${save.scene}`
+  const blocks = save.blocks.map((block) => block.id === recordId && block.kind === 'choices'
+    ? { ...block, text: encodeChoiceRecord(unique) }
+    : block)
+  return { ...save, choices: unique, blocks }
 }
 
 function createActionRecoveryChoices(
