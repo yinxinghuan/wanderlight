@@ -31,7 +31,7 @@ for (const locale of ['zh', 'en'] as const) {
   const concrete = zh ? '把货箱推到薄弱仓门后' : 'Push the cargo behind the weak warehouse door'
   const generic = zh
     ? ['和其他人商量怎么办', '观察现场的新变化', '等待', '换一种方式处理当前局面']
-    : ['Discuss with others what to do', 'Observe what changed around here', 'Wait and see', 'Try another way']
+    : ['Discuss with others what to do', 'Discuss what to do with the companions', 'Observe what changed around here', 'Wait and see', 'Try another way']
   const continuing = prepareTurnCandidate({
     save: active,
     cartridge,
