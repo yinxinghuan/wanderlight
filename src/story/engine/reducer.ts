@@ -1,7 +1,7 @@
 import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVisualIdentity, type DangerDirective, type DomainActionResolution, type ImageBlockStatus, type MapNode, type ParsedCommand, type ParsedScene, type SceneImageSubject, type StoryBlock, type StoryCartridge, type StoryCharacter, type StorySave } from '../types'
 import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
-import { createInitialDangerState, dangerDirectiveChoices, normalizeDangerState, settleDangerTurn } from './dangerDirector'
+import { contextualDangerChoiceLabels, createInitialDangerState, dangerDirectiveChoices, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
 import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, domainSuppressesDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
@@ -308,7 +308,7 @@ export function createRecoveryChoices(
   const objective = shortChoiceContext(save.objective, cartridge.locale === 'zh' ? 32 : 64).replace(/[。.!！?？；;]+$/u, '')
   const activeThreat = save.danger && save.danger.phase !== 'calm'
   const labels = activeThreat && cartridge.dangerDirector
-    ? [...cartridge.dangerDirector.methods]
+    ? contextualDangerChoiceLabels(save.danger?.currentThreat, cartridge.dangerDirector.methods, cartridge.locale)
     : objective
       ? [objective]
       : cartridge.locale === 'zh'
@@ -624,6 +624,15 @@ function deriveReplylessChoices(
   cartridge: StoryCartridge,
   actionId: string,
 ): StorySave['choices'] {
+  // Once a visible threat is active, older sibling choices are no longer a
+  // safe fallback: they may belong to the interrupted task or even the prior
+  // location. Keep every emergency exit tied to the exact unresolved threat.
+  if (next.danger.phase !== 'calm' && cartridge.dangerDirector) {
+    return contextualDangerChoiceLabels(next.danger.currentThreat, cartridge.dangerDirector.methods, cartridge.locale)
+      .filter((label) => label.trim() !== actionId.trim())
+      .slice(0, 5)
+      .map((label, index) => ({ id: `danger-recovery-${next.scene}-${index}`, label }))
+  }
   const candidates = save.location === next.location
     ? save.choices
       .filter((choice) => choice.label.trim() !== actionId.trim())

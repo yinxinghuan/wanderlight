@@ -103,6 +103,18 @@ const englishAfter = applyParsedScene(english, parseStoryProtocol(englishFirst!.
 assert.equal(resolveDomainAction(englishAfter, wanderlightEn, 'Look for a short job')?.status, 'rejected', 'English repeat must be blocked in the same place and day')
 assert.equal(resolveDomainAction(englishAfter, wanderlightEn, 'Look for another short job')?.status, 'rejected', 'English free-input repeat wording must hit the same atomic repeat gate')
 assert.equal(resolveDomainAction(english, wanderlightEn, 'Pay for the room and stay overnight')?.status, 'rejected', 'English overnight wording must resolve through lodging preflight instead of falling through to the model')
+for (const phrase of ['Stay overnight', 'Stay the night', 'Book the room', 'Rent the room', 'Get a room for the night']) {
+  assert.ok(resolveDomainAction(english, wanderlightEn, phrase), `English lodging commitment must reach deterministic preflight: ${phrase}`)
+}
+for (const phrase of ['Find another shift', 'Take another shift', 'Do another short job']) {
+  assert.equal(resolveDomainAction(englishAfter, wanderlightEn, phrase)?.status, 'rejected', `English repeated work variant must hit the repeat gate: ${phrase}`)
+}
+for (const phrase of ['Can I rest here?', 'May I rest here?', 'Is resting allowed here?', 'Can I stay overnight?']) {
+  assert.equal(resolveDomainAction(english, wanderlightEn, phrase), undefined, `English rest inquiry must not execute recovery or lodging: ${phrase}`)
+}
+for (const phrase of ['我可以在这里休息吗？', '这里可以休息吗？', '我能在这里睡一会吗？', '可以住一晚吗？']) {
+  assert.equal(resolveDomainAction(createInitialSave(wanderlight), wanderlight, phrase), undefined, `中文休息询问不能执行恢复或住宿: ${phrase}`)
+}
 
 const poor = { ...createInitialSave(wanderlight), stats: { ...createInitialSave(wanderlight).stats, coin: 2 } }
 const rejectedRoom = resolveDomainAction(poor, wanderlight, '住一晚')

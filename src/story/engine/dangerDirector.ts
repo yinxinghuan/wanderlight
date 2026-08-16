@@ -127,9 +127,30 @@ DANGER DIRECTIVE IS AUTHORITATIVE. Resolve the player's chosen response to the e
  * danger reply is rejected. They come from the cartridge's configured danger
  * methods, not from generic location/objective recovery copy. */
 export function dangerDirectiveChoices(directive: DangerDirective, scene: number): StorySave['choices'] {
-  return [...new Set(directive.methods.map((method) => method.trim()).filter(Boolean))]
+  return contextualDangerChoiceLabels(directive.threat, directive.methods, /[\u3400-\u9fff]/u.test(directive.methods.join('')) ? 'zh' : 'en')
     .slice(0, 5)
     .map((label, index) => ({ id: `danger-${scene}-${index}`, label }))
+}
+
+/** Emergency fallback labels must carry the actual threat into the button.
+ * Bare method names such as “discuss what to do” invite the model to abandon
+ * the confrontation on the next turn. */
+export function contextualDangerChoiceLabels(
+  threat: string | undefined,
+  methods: string[],
+  locale: StoryCartridge['locale'],
+): string[] {
+  const subject = (threat ?? '')
+    .replace(locale === 'zh' ? /[“”"'‘’。.!！?？；;：:]+/g : /[“”"‘’。.!！?？；;：:]+/g, ' ')
+    .replace(/\s+/g, ' ').trim()
+  if (!subject) return [...new Set(methods.map((method) => method.trim()).filter(Boolean))]
+  const concise = subject.length > (locale === 'zh' ? 26 : 56)
+    ? `${subject.slice(0, locale === 'zh' ? 25 : 55).trim()}…`
+    : subject
+  const labels = locale === 'zh'
+    ? [`确认“${concise}”的具体情况`, `立即应对“${concise}”`, `撤离“${concise}”影响的现场`]
+    : [`Confirm the facts about ${concise}`, `Respond directly to ${concise}`, `Withdraw from the scene of ${concise}`]
+  return [...new Set(labels)].filter((label) => label.length <= 96)
 }
 
 /** Rewrite only exact legacy danger-method labels that are still actionable in

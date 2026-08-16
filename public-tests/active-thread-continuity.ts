@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { wanderlight } from '../src/story/cartridges/wanderlight'
-import { buildDangerDirective } from '../src/story/engine/dangerDirector'
+import { buildDangerDirective, contextualDangerChoiceLabels } from '../src/story/engine/dangerDirector'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 import { applyParsedScene, createInitialSave, createRecoveryChoices } from '../src/story/engine/reducer'
 import { prepareTurnCandidate } from '../src/story/engine/turnPipeline'
@@ -61,6 +61,6 @@ assert.equal(save.blocks.some((block) => /同伴无法突破，只得撤退/.tes
 const ordinaryRecovery = createRecoveryChoices({ ...initial, partyMemberIds: ['mira'] }, wanderlight)
 assert.deepEqual(ordinaryRecovery.map((choice) => choice.label), ['审问刚抓到的俘虏'], '有未完事项时不混入观察或泛化商量按钮')
 const dangerRecovery = createRecoveryChoices({ ...save, danger: { ...save.danger, phase: 'confrontation', currentThreat: '俘虏的同伴赶来营救' } }, wanderlight)
-assert.deepEqual(dangerRecovery.map((choice) => choice.label), [...wanderlight.dangerDirector!.methods], '活动威胁恢复只使用世界声明的应对动作')
+assert.deepEqual(dangerRecovery.map((choice) => choice.label), contextualDangerChoiceLabels('俘虏的同伴赶来营救', wanderlight.dangerDirector!.methods, 'zh'), '活动威胁恢复使用世界声明的方法并写出具体威胁')
 
 console.log(JSON.stringify({ ok: true, checks: ['threat-establishment', 'nonresolving-action-preserves-thread', 'visible-resolution', 'objective-only-recovery', 'danger-native-recovery'] }))

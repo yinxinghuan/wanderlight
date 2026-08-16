@@ -330,6 +330,8 @@ export function canonicalizeTurnMetadata(
       const candidates = command.choices
         .map((label) => label.trim())
         .filter((label) => label.length >= 2 && label.length <= 96 && !seen.has(label) && Boolean(seen.add(label)))
+        .filter((label) => !isGenericSuggestedChoice(label, cartridge.locale))
+        .filter((label) => !repeatsCurrentAction(label, action, cartridge.locale))
         .filter((label) => !stalePlaceChoice(label, location, save))
         .slice(0, 5)
         .map((label, index) => ({ id: `candidate-${index}`, label }))
@@ -385,6 +387,41 @@ function validChoices(parsed: ParsedScene): string[] {
   if (command?.type !== 'choices') return []
   const labels = command.choices.map((label) => label.trim()).filter((label) => label.length >= 2 && label.length <= 96)
   return labels.length >= 1 && labels.length <= 5 && new Set(labels).size === labels.length ? labels : []
+}
+
+/** Generated replies must name a concrete in-world action. These labels are
+ * placeholders: selecting one gives the model no commitment to resolve and
+ * commonly causes abrupt thread switches or a same-menu loop. The reducer's
+ * deliberate last-resort observation fallback is created later and does not
+ * pass through this generated-choice filter. */
+export function isGenericSuggestedChoice(label: string, locale: StoryCartridge['locale']): boolean {
+  const value = label.replace(/[“”"'‘’。.!！?？；;：:]+/g, '').replace(/\s+/g, ' ').trim()
+  if (!value) return true
+  return locale === 'zh'
+    ? /^(?:(?:和|与|找|问)(?:同伴|同行者|其他人|大家|他们|她们|他|她)?(?:商量|讨论|聊聊|问问)(?:一下)?(?:怎么办|如何处理|如何应对|接下来|下一步)?|(?:观察|查看|看看)(?:周围|附近|这里|现场|当前)?(?:的)?(?:新变化|变化|情况|局势|动静)|(?:等待|先等等|观望|看看再说|静观其变)|(?:继续|推进|处理|应对|解决)(?:当前|眼前)?(?:任务|事情|情况|局面|问题)|(?:换一种方式|换个方式|另想办法|尝试别的办法)(?:处理当前局面)?|(?:放弃原计划|改走别的路))$/u.test(value)
+    : /^(?:(?:ask|talk to|discuss with|consult)(?: the)?(?: companion| companions| others| everyone| them)?(?: what to do| about what to do| about the next step| next steps?)?|(?:observe|check|see|watch)(?: what)?(?: changed| is new)(?: around here)?|(?:observe|check|see|watch)(?: the)?(?: situation| surroundings)|(?:wait|wait and see|hold back|see what happens)|(?:continue|advance|handle|address|resolve)(?: the)?(?: current| immediate)?(?: task| matter| situation| problem)|(?:try another way|find another way|do something else|set the original plan aside|take another route))$/i.test(value)
+}
+
+function withoutRetryPrefix(value: string, locale: StoryCartridge['locale']): string {
+  if (locale === 'zh') {
+    const normalized = value.replace(/[“”"'‘’。.!！?？；;：:，,\s]+/g, '').toLocaleLowerCase()
+    return normalized.replace(/^(?:继续|再次|再|重新|还是|仍然|接着|进一步)+/u, '')
+  }
+  const words = value.toLocaleLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/^(?:(?:continue|again|retry|reattempt|resume|keep|once more)\s+)+/i, '')
+    .split(' ').filter(Boolean)
+    .map((word) => word.length > 5 && word.endsWith('ing') ? word.slice(0, -3) : word)
+  return words.join('')
+}
+
+/** Never immediately recommend the action that has just completed. Players
+ * may still type a deliberate retry after a visible failure, but the system
+ * tray must not create that loop for them. */
+export function repeatsCurrentAction(label: string, action: string | undefined, locale: StoryCartridge['locale']): boolean {
+  if (!action?.trim()) return false
+  const candidate = withoutRetryPrefix(label, locale)
+  const current = withoutRetryPrefix(action, locale)
+  return Boolean(candidate && current && candidate === current)
 }
 
 export function canCommitDisplayedChoiceWithoutGeneratedReplies(

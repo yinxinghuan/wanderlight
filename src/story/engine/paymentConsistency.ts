@@ -20,8 +20,8 @@ function visiblePaymentSignals(locale: StoryCartridge['locale']) {
   // example, “next, collect the wage” or “still due after completion”). It
   // must not settle a contract until the prose says the transfer happened.
   const pendingReceipt = locale === 'zh'
-    ? /(?:(?:下一步|接下来|之后|以后|稍后|待会)[^。！？]{0,48}(?:领取|收到|拿到|领到|结算|发放)(?:[^。！？]{0,12}(?:报酬|工钱|薪水|工资|酬劳|钱币))?|(?:仍要|还要|尚要|仍需|还需|需要|需)?等[^。！？]{0,40}(?:结算|领取|收到|拿到|领到|发放))/
-    : /(?:(?:next(?: step)?|later|afterwards)[^.!?]{0,72}(?:collect|receive|get paid|be paid|settle|payment|wages?|salary|compensation)|(?:remains?|is|are|still)[^.!?]{0,24}(?:due|unpaid|to be paid))/i
+    ? /(?:(?:下一步|接下来|之后|以后|稍后|待会|准备|打算|计划|正要|即将|可以|将|会在|明早|明天|尚未|还没|仍待|等待)[^。！？]{0,64}(?:领取|收到|拿到|领到|结算|发放|递给|交给|付给|支付给|数给|塞给|到账|到手)|(?:领取|收到|拿到|领到|结算|发放|递给|交给|付给|支付给|数给|塞给|到账|到手)[^。！？]{0,32}(?:稍后|待会|明早|明天|以后|之后)|(?:仍要|还要|尚要|仍需|还需|需要|需)?等[^。！？]{0,40}(?:结算|领取|收到|拿到|领到|发放))/
+    : /(?:(?:next(?: step)?|tomorrow|plans? to|intends? to|about to|will|shall|scheduled to|can|may)[^.!?]{0,80}(?:hand|give|pay|collect|receive|get paid|be paid|settle|payment|wages?|salary|compensation)|(?:hands?|gives?|pays?|paid|collects?|receives?)[^.!?]{0,40}(?:later|tomorrow|afterwards|next (?:day|morning|week))|(?:remains?|is|are|still)[^.!?]{0,24}(?:due|unpaid|to be paid))/i
   return { received, compensationReceived, deniedReceipt, pendingReceipt }
 }
 

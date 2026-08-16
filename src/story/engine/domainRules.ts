@@ -28,15 +28,18 @@ function normalized(value: string): string {
 function isRestCommitment(value: string): boolean {
   const source = value.trim().toLocaleLowerCase()
   const chineseRest = /(?:休息|歇一会|小睡|睡一会|睡觉|打盹|眯一会|恢复呼吸|住一晚|租[^，。！？]{0,8}房|支付房费|付房费|订[^，。！？]{0,8}房|今天不再行动)/u.test(source)
-  const englishRest = /\b(?:rest|sleep|nap|doze)(?:ing)?\b|\b(?:take a break|catch my breath|stay (?:for )?(?:the night|overnight)|rent (?:a )?room|pay (?:for )?(?:(?:a|the) )?room(?: fee)?|book (?:a )?room|reserve (?:a )?room|stop for the day)\b/i.test(source)
+  const englishRest = /\b(?:rest|sleep|nap|doze)(?:ing)?\b|\b(?:take a break|catch my breath|stay (?:for )?(?:the night|overnight)|rent (?:(?:a|the) )?room|pay (?:for )?(?:(?:a|the) )?room(?: fee)?|book (?:(?:a|the) )?room|reserve (?:(?:a|the) )?room|get (?:(?:a|the) )?room for the night|stop for the day)\b/i.test(source)
   if (!chineseRest && !englishRest) return false
   const chineseNegation = /(?:不|别)(?:要|想|打算|准备|再)?(?:休息|睡|小睡|打盹|住下)/u.test(source)
   const englishNegation = /\b(?:do not|don't|not going to|won't|without|skip)\b.{0,24}\b(?:rest|sleep|nap|stay)\b/i.test(source)
   const chineseReport = /(?:告诉|跟[^，。！？]{0,10}说|对[^，。！？]{0,10}说|表示|说明).{0,24}(?:休息|睡|住下)/u.test(source)
   const englishReport = /\b(?:tell|say to|explain to|let [a-z ]{1,20} know)\b.{0,48}\b(?:rest|sleep|stay)\b/i.test(source)
   const chineseInquiry = /(?:问|询问|打听|了解|看看|查看).{0,18}(?:休息|睡|客房|房间)|(?:哪里|哪儿|有没有|能不能|是否).{0,18}(?:休息|睡|客房|房间)|(?:休息|客房|房间).{0,12}(?:多少钱|价格|条件)/u.test(source)
+    || /(?:我|我们)?(?:可以|能|可不可以|能否)[^，。！？]{0,18}(?:休息|睡|住一晚|住下|客房|房间)[^，。！？]{0,4}(?:吗|么|\?|？)/u.test(source)
   const englishInquiry = /\b(?:ask|inquire|check|learn|find out|whether|where can|is there|how much|price)\b.{0,48}\b(?:rest|sleep|nap|room|bed|shelter)\b/i.test(source)
     || /\b(?:rest|room|bed|shelter)\b.{0,32}\b(?:price|cost|available|availability)\b/i.test(source)
+    || /\b(?:can|could|may|would)\s+(?:i|we)\b.{0,40}\b(?:rest|sleep|nap|stay|book|rent)\b/i.test(source)
+    || /\bis\b.{0,28}\b(?:resting|sleeping|staying)\b.{0,20}\b(?:allowed|possible|available|okay|ok)\b/i.test(source)
   return !chineseNegation && !englishNegation && !chineseReport && !englishReport && !chineseInquiry && !englishInquiry
 }
 

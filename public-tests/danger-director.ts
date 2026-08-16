@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { wanderlight, wanderlightEn } from '../src/story/cartridges/wanderlight'
-import { buildDangerDirective, repairLegacyDangerMethodChoices } from '../src/story/engine/dangerDirector'
+import { buildDangerDirective, contextualDangerChoiceLabels, repairLegacyDangerMethodChoices } from '../src/story/engine/dangerDirector'
 import { applyParsedScene, createChoiceRecordBlock, createInitialSave } from '../src/story/engine/reducer'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
 
@@ -34,7 +34,7 @@ const warning = buildDangerDirective(checkpoint, wanderlight, '继续漫游')!
 const replylessWarning = applyParsedScene(checkpoint, parseStoryProtocol(`公告板上出现了末班月线取消的警告。
 [scene_location: location="灯湾码头"]
 [encounter: phase="warning" kind="${warning.threat}" severity="${warning.severity}" outcome="active"]`, 'zh'), wanderlight, '继续漫游', undefined, undefined, warning)
-assert.deepEqual(replylessWarning.choices.map((choice) => choice.label), [...warning.methods], 'a replyless danger turn uses configured response methods instead of generic recovery choices')
+assert.deepEqual(replylessWarning.choices.map((choice) => choice.label), contextualDangerChoiceLabels(warning.threat, warning.methods, 'zh'), 'a replyless danger turn uses configured methods bound to the exact threat')
 assert.equal(replylessWarning.choices.some((choice) => choice.label.includes('追查“')), false)
 
 assert.deepEqual(wanderlight.dangerDirector?.methods, [

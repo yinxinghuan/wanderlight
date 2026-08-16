@@ -21,6 +21,8 @@
     "test:domain-continuity": "node --import tsx public-tests/domain-thread-continuity.ts",
     "test:recovery-choice-priority": "node --import tsx public-tests/recovery-choice-priority.ts",
     "test:active-thread": "node --import tsx public-tests/active-thread-continuity.ts",
+    "test:extended-continuity": "node --import tsx public-tests/extended-continuity-matrix.ts",
+    "test:choice-quality": "node --import tsx public-tests/recommended-choice-quality.ts",
     "test:multiturn": "node --import tsx public-tests/multiturn-scenario-matrix.ts",
     "test:image-director": "node --import tsx public-tests/image-director.ts",
     "test:resume": "node --import tsx public-tests/reading-anchor.ts",

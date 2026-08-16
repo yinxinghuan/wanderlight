@@ -13,6 +13,7 @@ const englishInitial = createInitialSave(englishCartridge)
 const englishOffer = parseStoryProtocol('The supervisor says the completed packing work will pay you 8 coins.\n[job: action="offer" id="english-crates" label="Pack three cases" employer="Supervisor" wage="8"]', 'en')
 equal(validatePaymentConsistency(englishInitial, englishOffer, englishCartridge).length, 0, 'English future-tense wage offer must remain a promise, not a completed receipt')
 equal(applyParsedScene(englishInitial, englishOffer, englishCartridge, 'Ask about packing work').stats.coin, 6, 'English future-tense wage offer cannot pay early')
+const englishAfterOffer = applyParsedScene(englishInitial, englishOffer, englishCartridge, 'Ask about packing work')
 
 const offered = parseStoryProtocol(`媛夕说：“再帮我把木箱送上车，我付你八枚钱币。”
 [job: action="offer" id="mira-seed-crate" label="把种荚木箱送上月线" employer="媛夕" wage="8"]`, 'zh')
@@ -87,6 +88,86 @@ equal(applyParsedScene(afterOffer, futureWageZh, cartridge, '确认封装顺序'
 const futureWageEn = canonicalizePaymentMetadata(englishInitial, parseStoryProtocol('The next step is to finish the cases and collect the wage; five coins remain due only after completion.', 'en'), englishCartridge, 'Confirm the packing order')
 equal(futureWageEn.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, 'English future wage plan cannot settle a contract early')
 equal(applyParsedScene(englishInitial, futureWageEn, englishCartridge, 'Confirm the packing order').stats.coin, 6, 'English future wage cannot credit coins early')
+
+for (const phrase of [
+  '你准备领取八枚钱币的工钱，但负责人还没有验收。',
+  '你打算明早领取八枚钱币的工资。',
+  '你可以在验收后领取八枚钱币的报酬。',
+  '负责人稍后会把八枚钱币递给你。',
+  '负责人正准备把八枚钱币交给你。',
+  '八枚钱币将由负责人在明早支付给你。',
+]) {
+  const candidate = canonicalizePaymentMetadata(afterOffer, parseStoryProtocol(phrase, 'zh'), cartridge, '确认结算时间')
+  equal(candidate.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, `未发生的中文工资不能提前结算: ${phrase}`)
+  equal(applyParsedScene(afterOffer, candidate, cartridge, '确认结算时间').stats.coin, 6, `未发生的中文工资不能提前入账: ${phrase}`)
+}
+
+for (const phrase of [
+  'The supervisor plans to hand you 8 coins as wages tomorrow.',
+  'The supervisor will hand you 8 coins as wages after inspection.',
+  'You are about to receive 8 coins as salary.',
+  'The supervisor says she pays you 8 coins tomorrow.',
+  'She hands you 8 coins tomorrow after the ledger closes.',
+]) {
+  const candidate = canonicalizePaymentMetadata(englishAfterOffer, parseStoryProtocol(phrase, 'en'), englishCartridge, 'Confirm the settlement time')
+  equal(candidate.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, `English scheduled wage cannot settle early: ${phrase}`)
+  equal(applyParsedScene(englishAfterOffer, candidate, englishCartridge, 'Confirm the settlement time').stats.coin, 6, `English scheduled wage cannot credit early: ${phrase}`)
+}
+
+for (const phrase of [
+  '负责人验收完木箱，当场把八枚钱币递给你作为工钱。',
+  '你的工资已经到账，一共八枚钱币。',
+  '你领到了八枚钱币的报酬。',
+]) {
+  const candidate = canonicalizePaymentMetadata(afterOffer, parseStoryProtocol(phrase, 'zh'), cartridge, '完成装箱')
+  equal(applyParsedScene(afterOffer, candidate, cartridge, '完成装箱').stats.coin, 14, `已经发生的中文工资必须入账: ${phrase}`)
+}
+
+for (const phrase of [
+  'After inspecting the cases, the supervisor hands you 8 coins as wages.',
+  'You received 8 coins as salary for the completed shift.',
+  'The supervisor paid you 8 coins for the finished packing work.',
+]) {
+  const candidate = canonicalizePaymentMetadata(englishAfterOffer, parseStoryProtocol(phrase, 'en'), englishCartridge, 'Finish packing')
+  equal(applyParsedScene(englishAfterOffer, candidate, englishCartridge, 'Finish packing').stats.coin, 14, `Completed English wage must credit: ${phrase}`)
+}
+
+let scheduledWageVariants = 0
+for (const cue of ['准备', '打算', '计划', '正要', '即将', '稍后会', '明早会']) {
+  for (const verb of ['领取', '收到', '拿到']) {
+    const phrase = `你${cue}${verb}八枚钱币的工资。`
+    const candidate = canonicalizePaymentMetadata(afterOffer, parseStoryProtocol(phrase, 'zh'), cartridge, '确认结算时间')
+    equal(candidate.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, `中文未来工资组合不能提前结算: ${phrase}`)
+    scheduledWageVariants += 1
+  }
+  for (const verb of ['递给', '交给', '支付给']) {
+    const phrase = `负责人${cue}把八枚钱币${verb}你作为工资。`
+    const candidate = canonicalizePaymentMetadata(afterOffer, parseStoryProtocol(phrase, 'zh'), cartridge, '确认结算时间')
+    equal(candidate.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, `中文未来转账组合不能提前结算: ${phrase}`)
+    scheduledWageVariants += 1
+  }
+}
+for (const cue of ['plans to', 'intends to', 'will', 'is about to', 'is scheduled to']) {
+  for (const verb of ['hand', 'give', 'pay']) {
+    const phrase = `The supervisor ${cue} ${verb} you 8 coins as wages.`
+    const candidate = canonicalizePaymentMetadata(englishAfterOffer, parseStoryProtocol(phrase, 'en'), englishCartridge, 'Confirm settlement timing')
+    equal(candidate.commands.some((command) => command.type === 'job' && command.action === 'settle'), false, `English future wage combination cannot settle early: ${phrase}`)
+    scheduledWageVariants += 1
+  }
+}
+
+for (const action of [
+  '询问房费', '看看房间价格', '寻找便宜住宿', '考虑是否住下', '打听一晚多少钱',
+]) {
+  const candidate = canonicalizePaymentMetadata(initial, parseStoryProtocol('你支付了十枚钱币订下房间。', 'zh'), cartridge, action)
+  ok(validatePaymentConsistency(initial, candidate, cartridge, action).includes('payment.purchase_requires_player_authorization'), `中文询价不能授权模型付款: ${action}`)
+}
+for (const action of [
+  'Ask the room price', 'Check the cost of a room', 'Look for affordable lodging', 'Consider staying overnight', 'Find out how much one night costs',
+]) {
+  const candidate = canonicalizePaymentMetadata(englishInitial, parseStoryProtocol('You paid 10 coins and booked the room.', 'en'), englishCartridge, action)
+  ok(validatePaymentConsistency(englishInitial, candidate, englishCartridge, action).includes('payment.purchase_requires_player_authorization'), `English inquiry cannot authorize model spending: ${action}`)
+}
 
 const savedVaguePayment = {
   ...afterOffer,
@@ -218,4 +299,4 @@ const canonicalDoubled = canonicalizePaymentMetadata(initial, doubled, cartridge
 equal(validatePaymentConsistency(initial, canonicalDoubled, cartridge).length, 0, '本地规范化应移除合同结算旁的重复钱币指令')
 equal(applyParsedScene(initial, canonicalDoubled, cartridge, '完成装箱').stats.coin, 15, '移除重复指令后工资仍只入账一次')
 
-console.log(JSON.stringify({ ok: true, checks: ['offer-no-credit', 'contract-immutable', 'contract-settlement', 'repeat-rejected', 'screenshot-vague-payment', 'copper-coin-recognition', 'legacy-screenshot-repair', 'night-market-legacy-repair', 'amount-mismatch', 'purchase', 'promise-no-credit', 'offer-canonicalized', 'paid-work-canonicalized', 'purchase-canonicalized', 'no-double-credit', 'duplicate-credit-canonicalized'] }))
+console.log(JSON.stringify({ ok: true, scheduledWageVariants, checks: ['offer-no-credit', 'contract-immutable', 'contract-settlement', 'repeat-rejected', 'screenshot-vague-payment', 'copper-coin-recognition', 'legacy-screenshot-repair', 'night-market-legacy-repair', 'amount-mismatch', 'purchase', 'promise-no-credit', 'offer-canonicalized', 'paid-work-canonicalized', 'purchase-canonicalized', 'no-double-credit', 'duplicate-credit-canonicalized'] }))
