@@ -68,6 +68,64 @@ function repeatFactId(save: StorySave, ruleId: string): string {
   return `domain-repeat:${ruleId}:${place}:day-${currentWorldDay(save)}`
 }
 
+function contextualRestScene(save: StorySave, action: string): string | undefined {
+  const current = save.map.find((node) => node.current)
+  if (!current?.routeHints?.length) return undefined
+  const source = normalized(action)
+  const currentNames = new Set([current.label, save.location].map(normalized))
+  return [...current.routeHints]
+    .filter((hint) => {
+      const key = normalized(hint)
+      return key.length >= 2 && !currentNames.has(key) && source.includes(key)
+    })
+    .sort((left, right) => normalized(right).length - normalized(left).length)[0]
+}
+
+function contextualRestCharacter(save: StorySave, action: string): StorySave['characters'][number] | undefined {
+  const source = normalized(action)
+  return save.characters
+    .filter((character) => character.status !== 'departed' && normalized(character.name).length >= 2)
+    .sort((left, right) => normalized(right.name).length - normalized(left.name).length)
+    .find((character) => source.includes(normalized(character.name)))
+}
+
+function contextualRestText(
+  cartridge: StoryCartridge,
+  scene: string | undefined,
+  characterName: string | undefined,
+): string | undefined {
+  if (!scene && !characterName) return undefined
+  if (cartridge.locale === 'zh') {
+    if (scene && characterName) return `你和${characterName}来到${scene}，暂时停下脚步。四十五分钟里，你们没有再赶路，只让呼吸和双腿慢慢恢复；这次休息没有取消原先的安排。休息结束时，你重新有了行动的力气。`
+    if (scene) return `你来到${scene}，停下来休息。四十五分钟里，你没有再勉强赶路，只让呼吸和双腿慢慢恢复；原先的安排仍然保留。休息结束时，你重新有了行动的力气。`
+    return `你和${characterName}在这里停下来休息。四十五分钟里，你没有再勉强赶路，只让呼吸和双腿慢慢恢复；原先的安排仍然保留。休息结束时，你重新有了行动的力气。`
+  }
+  if (scene && characterName) return `You reach ${scene} with ${characterName} and stop to rest. For forty-five minutes you let your breathing and legs recover without abandoning the plans already in motion. By the end, you have the strength to act again.`
+  if (scene) return `You reach ${scene} and stop to rest. For forty-five minutes you let your breathing and legs recover without abandoning the plans already in motion. By the end, you have the strength to act again.`
+  return `You stop here to rest with ${characterName}. For forty-five minutes you let your breathing and legs recover without abandoning the plans already in motion. By the end, you have the strength to act again.`
+}
+
+function contextualRestChoices(
+  save: StorySave,
+  cartridge: StoryCartridge,
+  action: string,
+  scene: string | undefined,
+  characterName: string | undefined,
+): string[] {
+  const choices: string[] = []
+  if (scene && characterName) choices.push(cartridge.locale === 'zh'
+    ? `问${characterName}${scene}平时是什么样子`
+    : `Ask ${characterName} what ${scene} is usually like`)
+  else if (scene) choices.push(cartridge.locale === 'zh'
+    ? `休息后仔细看看${scene}`
+    : `Take a closer look around ${scene} after resting`)
+  const selected = normalized(action)
+  save.choices.forEach((choice) => {
+    if (normalized(choice.label) !== selected) choices.push(choice.label)
+  })
+  return [...new Set(choices)].slice(0, 5)
+}
+
 export function activeStatFloorRule(save: StorySave, cartridge: StoryCartridge) {
   for (const definition of cartridge.statDefinitions) {
     const rule = definition.floorRule
@@ -159,20 +217,29 @@ export function resolveDomainAction(save: StorySave, cartridge: StoryCartridge, 
   if (accepted && candidate.rule.dangerPolicy === 'withdraw' && save.danger.phase !== 'calm') {
     effects.push({ type: 'danger', outcome: 'costly-success' })
   }
+  const restScene = accepted && candidate.rule.id === 'catch-breath' ? contextualRestScene(save, action) : undefined
+  const restCharacter = accepted && candidate.rule.id === 'catch-breath' ? contextualRestCharacter(save, action) : undefined
+  const restText = accepted && candidate.rule.id === 'catch-breath'
+    ? contextualRestText(cartridge, restScene, restCharacter?.name)
+    : undefined
+  const restChoices = restText
+    ? contextualRestChoices(save, cartridge, action, restScene, restCharacter?.name)
+    : undefined
   return {
     status: accepted ? 'accepted' : 'rejected',
     ruleId: candidate.rule.id,
     intent: candidate.rule.intent,
     effects,
     reasons,
-    successText: candidate.rule.successText,
+    successText: restText ?? candidate.rule.successText,
     dangerPolicy: candidate.rule.dangerPolicy,
     continuation: accepted
-      ? candidate.rule.successContinuation ?? 'replace'
+      ? (restChoices?.length ? 'replace' : candidate.rule.successContinuation ?? 'replace')
       : candidate.rule.rejectionContinuation ?? 'replace',
-    successChoices: [...((reasons.length && candidate.rule.rejectionChoices
+    successChoices: restChoices ?? [...((reasons.length && candidate.rule.rejectionChoices
       ? candidate.rule.rejectionChoices
       : candidate.rule.successChoices) ?? [])],
+    sceneLocation: restScene,
   }
 }
 
@@ -347,11 +414,12 @@ export function applyDomainResolution(save: StorySave, cartridge: StoryCartridge
       data: { domainRule: resolution.ruleId, domainStatus: 'rejected' },
     }]
   }
+  if (resolution.sceneLocation) save.sceneLocation = resolution.sceneLocation
   const blocks: StoryBlock[] = [{
     id: `domain-${save.scene}`,
     kind: 'narration',
     text: resolution.successText,
-    data: { domainRule: resolution.ruleId, domainStatus: 'accepted' },
+    data: { domainRule: resolution.ruleId, domainStatus: 'accepted', ...(resolution.sceneLocation ? { sceneLocation: resolution.sceneLocation } : {}) },
   }]
   const statDeltas = new Map<string, number>()
   resolution.effects.forEach((effect) => {

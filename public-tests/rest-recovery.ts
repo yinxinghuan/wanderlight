@@ -49,6 +49,33 @@ for (const [locale, cartridge] of [['zh', wanderlight], ['en', wanderlightEn]] a
     expect(next.location, save.location, `${locale} contextual rest does not invent travel`)
   }
 
+  const contextualSave = createInitialSave(cartridge)
+  const contextualNodeId = 'whitecap-baths'
+  const contextualNode = contextualSave.map.find((node) => node.id === contextualNodeId)
+  check(contextualNode, `${locale} Whitecap Baths exists for contextual rest test`)
+  contextualSave.map.forEach((node) => { node.current = node.id === contextualNodeId })
+  contextualNode.visited = true
+  contextualSave.location = contextualNode.label
+  contextualSave.sceneLocation = contextualNode.label
+  const mira = cartridge.characters.find((character) => character.id === 'mira-voss')
+  check(mira, `${locale} Mira exists for contextual rest test`)
+  contextualSave.characters.push({ ...mira, skills: mira.skills.map((skill) => ({ ...skill })), status: 'known', origin: 'cartridge', lastKnownLocation: contextualNode.label, updatedAtScene: 6 })
+  const contextualAction = locale === 'zh' ? '和媛夕一起去蒸汽露台休息' : 'Go rest at the Steam Terrace with Mira Voss'
+  const sibling = locale === 'zh' ? '询问林叔是否还有其他需要帮忙的工作' : 'Ask Uncle Lin whether any other work needs doing'
+  contextualSave.choices = [{ id: 'contextual-sibling', label: sibling }, { id: 'contextual-rest', label: contextualAction }]
+  contextualSave.stats.energy = 22
+  const contextualRest = applyLocal(contextualSave, cartridge, contextualAction)
+  expect(contextualRest.result.ruleId, 'catch-breath', `${locale} contextual companion rest remains deterministic`)
+  expect(contextualRest.next.stats.energy, 30, `${locale} contextual companion rest restores exact energy`)
+  expect(contextualRest.next.location, contextualNode.label, `${locale} contextual companion rest keeps the map node`)
+  expect(contextualRest.next.sceneLocation, locale === 'zh' ? '蒸汽露台' : 'steam terrace', `${locale} contextual companion rest persists the named sublocation`)
+  check(contextualRest.result.successText.includes(mira.name), `${locale} contextual rest prose keeps the companion`)
+  check(contextualRest.result.successText.toLocaleLowerCase().includes(locale === 'zh' ? '蒸汽露台' : 'steam terrace'), `${locale} contextual rest prose keeps the named sublocation`)
+  check(!contextualRest.result.successText.includes(locale === 'zh' ? '原地坐下' : 'sit until'), `${locale} contextual rest does not fall back to in-place boilerplate`)
+  expect(contextualRest.next.choices.length, 2, `${locale} contextual rest keeps one direct follow-up and the grounded sibling`)
+  check(contextualRest.next.choices[0]!.label.includes(mira.name), `${locale} first contextual follow-up stays with the companion`)
+  check(contextualRest.next.choices.some((choice) => choice.label === sibling), `${locale} prior grounded sibling remains available`)
+
   const inquiries = locale === 'zh'
     ? ['询问哪里可以休息', '看看这间屋子能不能休息', '问客房休息多少钱', '询问能不能在旅店休息']
     : ['Ask where I can rest', 'Check whether this hut is available for rest', 'Ask how much the room costs before resting', 'Ask whether I can rest at the inn']
@@ -146,5 +173,5 @@ for (const [locale, cartridge] of [['zh', wanderlight], ['en', wanderlightEn]] a
 
 console.log(JSON.stringify({ ok: true, simulatedDynamicRestPlaces: 120, assertions, coverage: [
   'nonzero-rest', 'zero-rest', 'contextual-language', 'inquiry-no-consent', 'exact-room-and-morning',
-  'danger-block', 'danger-withdrawal', 'no-danger-stacking', 'dynamic-generated-rest', 'hostile-command-isolation', 'zh-en',
+  'companion-and-sublocation-rest', 'danger-block', 'danger-withdrawal', 'no-danger-stacking', 'dynamic-generated-rest', 'hostile-command-isolation', 'zh-en',
 ] }))

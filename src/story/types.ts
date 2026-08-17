@@ -192,6 +192,8 @@ export interface DomainActionResolution {
   successChoices: string[]
   continuation: 'replace' | 'resume' | 'derive' | 'checkpoint'
   dangerPolicy?: DomainActionRule['dangerPolicy']
+  /** A locally verified sublocation named by the player's governed action. */
+  sceneLocation?: string
 }
 
 export interface JobContract {
