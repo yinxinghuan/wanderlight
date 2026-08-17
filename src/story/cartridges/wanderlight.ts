@@ -72,6 +72,11 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
     phases: ['calm' as const],
     reason: s('眼前的危险还没有解除，现在停下来休息会让你暴露其中。先应对危险，或撤退到安全的公共休息处。', 'The immediate danger is still active; stopping to rest would leave you exposed. Address it first, or withdraw to a safe public rest area.'),
   }
+  const safeOrdinaryAction = {
+    type: 'danger' as const,
+    phases: ['calm' as const],
+    reason: s('眼前的危险还没有解除，不能把它留在原地去工作或赶路。先应对危险，或明确撤退。', 'The immediate danger is still active; you cannot leave it behind by working or travelling. Address it first, or explicitly withdraw.'),
+  }
   const travelDestinations = [
     { nodeId: 'silverleaf-vineyard', label: s('银叶葡萄丘', 'Silverleaf Vineyard'), intent: s('独自买票去银叶葡萄丘', 'buy a ticket to Silverleaf Vineyard'), arrivalChoices: [] as string[] },
     { nodeId: 'cupshadow-market', label: s('杯影夜市', 'Cupshadow Market'), intent: s('独自买票去杯影夜市', 'buy a ticket to Cupshadow Market'), arrivalChoices: [] as string[] },
@@ -169,6 +174,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         successContinuation: 'resume',
         rejectionContinuation: 'resume',
         requirements: [
+          safeOrdinaryAction,
           { type: 'capability', id: 'local-shift', reason: s('这里没有已经确认、可以立即开工并结算的短工。先查看当前地点的告示或向现场的人询问。', 'There is no confirmed shift here that can begin and settle now. Check this place’s notices or ask someone present first.') },
           { type: 'stat', id: 'energy', min: 12, reason: s('你太累了，手上的活已经开始出错。先吃点东西或休息。', 'You are too tired to work safely. Eat or rest first.') },
         ],
@@ -220,6 +226,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
         intent,
         match: [intent, s(`独自前往${label}`, `travel alone to ${label}`), s(`买票前往${label}`, `buy passage to ${label}`)],
         requirements: [
+          safeOrdinaryAction,
           { type: 'map' as const, notNodeId: nodeId, reason: s(`你已经在${label}。`, `You are already at ${label}.`) },
           { type: 'stat' as const, id: 'coin', min: 3, reason: s('普通车票需要三枚钱币。你可以先接短工，或找乘务员谈谈。', 'A regular ticket costs three coin. Take a short job or speak with the steward first.') },
           { type: 'stat' as const, id: 'energy', min: 2, reason: s('你连走到月台都很勉强。先休息一下。', 'You are too tired even to reach the platform. Rest first.') },
@@ -312,6 +319,31 @@ function make(locale: Locale): StoryCartridge {
   const v1Outcomes = wanderlightV1Outcomes(locale)
   const expansionTurns = wanderlightExpansionTurns(locale)
   const expansionDirector = wanderlightExpansionDirector(locale)
+  const vineyardRoadThreat = s('银雨封闭葡萄丘道路', 'silver rain closes the vineyard road')
+  const marketEmployerThreat = s('夜市雇主拒绝按约支付', 'a night-market employer withholds payment')
+  const windglassThreat = s('风玻璃崖的信号灯被盐雾遮住', 'salt fog hides the Windglass signal lamp')
+  const reedwaterThreat = s('芦水渡村的水闸在涨潮前卡死', 'the Reedwater lock gate jams before high tide')
+  const whitecapThreat = s('白浪浴镇的热水管突然停流', 'hot water stops flowing at Whitecap Baths')
+  const quarryThreat = s('旧石坑花园的蓄雨渠越过安全水位', 'the Old Quarry rain channel rises above its safe mark')
+  const orchardThreat = s('云阶果园的授粉灯引错了蛾群', "Cloudstep's pollination lamps draw the moths off course")
+  const parcelThreat = s('沿线邮袋里出现两件地址相同的包裹', 'two parcels in the route bag carry the same address')
+  const dangerThreats = [
+    s('末班月线突然取消', 'the last Moonline is cancelled'),
+    s('私人邀请被公开复述', 'a private invitation is repeated publicly'),
+    vineyardRoadThreat,
+    marketEmployerThreat,
+    ...expansionDirector.threats,
+  ]
+  const threatLocations = {
+    [vineyardRoadThreat]: ['silverleaf-vineyard'],
+    [marketEmployerThreat]: ['cupshadow-market'],
+    [windglassThreat]: ['windglass-cliffs'],
+    [reedwaterThreat]: ['reedwater-crossing'],
+    [whitecapThreat]: ['whitecap-baths'],
+    [quarryThreat]: ['old-quarry-gardens'],
+    [orchardThreat]: ['cloudstep-orchard'],
+    [parcelThreat]: ['cloudstep-orchard'],
+  }
   const miraOpeningTurn = {
     match: zh ? ['种荚', '短发', '帮'] : ['seed', 'short-haired', 'help'],
     content: miraDebut,
@@ -433,7 +465,7 @@ function make(locale: Locale): StoryCartridge {
     imageDirector: { maxQuietTurns: 2, softCooldownTurns: 1, guaranteedTriggers: ['new-location', 'relationship-change', 'character-expression'], softTriggers: ['party-change', 'objective-change', 'chapter-checkpoint'] },
     presetEventDirector: { events: wanderlightPresetEvents(locale) },
     director: { mode: 'open-world', fixedWorldRules: [s('所有可亲密角色明确为 24 岁以上成年人。', 'Every intimate character is explicitly aged 24 or older.'), s('人物只知道亲历或被告知的事实，约定与边界持续存在。', 'Characters know only witnessed or told facts; promises and boundaries persist.'), s('长期角色使用稳定 id，固化身份不能静默替换。', 'Recurring characters use stable ids and anchored identities cannot be silently replaced.'), s('跨地区移动先经过月线车厢或月台。', 'Cross-region travel passes through the Moonline carriage or platform.'), s('关系变化引用可见事件，不使用隐藏好感值。', 'Relationship changes cite visible events, not a hidden affection score.'), ...expansionDirector.fixedRules], generationRules: [s('可创造符合当前地区的成年 NPC、工作和邀请。', 'You may create adult NPCs, jobs and invitations appropriate to the region.'), s('新 NPC 正式登场时使用稳定 id 和英文视觉身份字段。', 'A new NPC formal debut uses a stable id and English visual identity fields.'), s('暧昧来自共同活动、同意和边界，不描写露骨性行为。', 'Flirtation grows from shared activity, consent and boundaries, never explicit sex.'), s('每回合改变一项权威事实。', 'Every turn changes one authoritative fact.'), s('叙事先写清人物、动作与因果；质感来自可见细节和潜台词，不使用晦涩隐喻或幕后术语。', 'Narration makes actors, actions, and causality clear; texture comes from observable detail and subtext, never obscure metaphor or design jargon.'), s('每次最多引入一个陌生世界词，并立刻通过外形、用途或现场反应自然说明。', 'Introduce at most one unfamiliar world term at a time and explain it immediately through appearance, function, or an observable reaction.'), ...expansionDirector.generationRules], choiceIntents: [s('跟随某人或加深关系', 'follow someone or deepen a relationship'), s('探索地点或接受工作', 'explore a place or accept work'), s('保护时间、资源或边界', 'protect time, resources or a boundary')], maxActiveThreads: 3 },
-    dangerDirector: { minSafeTurns: 3, maxSafeTurns: 5, cooldownTurns: 3, escalationStats: ['energy', 'coin', 'renown'], threatPalette: [s('末班月线突然取消', 'the last Moonline is cancelled'), s('私人邀请被公开复述', 'a private invitation is repeated publicly'), s('银雨封闭葡萄丘道路', 'silver rain closes the vineyard road'), s('夜市雇主拒绝按约支付', 'a night-market employer withholds payment'), ...expansionDirector.threats], methods: [s('先问清楚发生了什么', 'Ask what happened first'), s('冒险继续原来的计划', 'Risk carrying on with the plan'), s('先退一步，换个办法', 'Step back and try another way')], legacyMethods: [['询问并理解警告', '承担代价保护承诺', '撤退、改道或设定边界'], ['ask for context', 'protect a promise at a cost', 'withdraw, reroute or set a boundary']], physicalCombat: 'none', resolution: { skill: s('判断', 'Judgment'), modifier: 2, dcBySeverity: [7, 9, 11, 13, 15], fallbackCosts: [{ statId: 'energy', operation: 'remove', amount: 12 }] } },
+    dangerDirector: { minSafeTurns: 3, maxSafeTurns: 5, cooldownTurns: 3, escalationStats: ['energy', 'coin', 'renown'], threatPalette: dangerThreats, threatLocations, methods: [s('先问清楚发生了什么', 'Ask what happened first'), s('冒险继续原来的计划', 'Risk carrying on with the plan'), s('先退一步，换个办法', 'Step back and try another way')], legacyMethods: [['询问并理解警告', '承担代价保护承诺', '撤退、改道或设定边界'], ['ask for context', 'protect a promise at a cost', 'withdraw, reroute or set a boundary']], physicalCombat: 'none', resolution: { skill: s('判断', 'Judgment'), modifier: 2, dcBySeverity: [7, 9, 11, 13, 15], fallbackCosts: [{ statId: 'energy', operation: 'remove', amount: 12 }] } },
     initialFacts: { all_intimate_characters_adult: true, dynamic_identity_trial: true, world_expansion_v2: true, moonline_stamps_used: 0, world_day: 1, jobs_completed: 0, meals_eaten: 0, nights_slept: 0, carriage_rests: 0, exhaustion_recoveries: 0 },
     statDefinitions: [
       {

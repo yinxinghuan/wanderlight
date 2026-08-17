@@ -110,6 +110,8 @@ export interface StoryDangerDirector {
   graceScenes?: number
   escalationStats: string[]
   threatPalette: string[]
+  /** Optional map-node allowlist for world-specific threats. Unlisted threats remain global. */
+  threatLocations?: Record<string, string[]>
   methods: [string, string, string]
   /** Previous player-facing copies, kept only to migrate live choices in old saves. */
   legacyMethods?: [string, string, string][]

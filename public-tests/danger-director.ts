@@ -1,8 +1,10 @@
 import { strict as assert } from 'node:assert'
 import { wanderlight, wanderlightEn } from '../src/story/cartridges/wanderlight'
 import { buildDangerDirective, contextualDangerChoiceLabels, repairLegacyDangerMethodChoices } from '../src/story/engine/dangerDirector'
+import { resolveDomainAction } from '../src/story/engine/domainRules'
 import { applyParsedScene, createChoiceRecordBlock, createInitialSave } from '../src/story/engine/reducer'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
+import { prepareTurnCandidate } from '../src/story/engine/turnPipeline'
 
 const initial = createInitialSave(wanderlight)
 const destinations = ['lantern-quay', 'silverleaf-vineyard', 'far-lantern-institute', 'tidal-islands']
@@ -21,6 +23,90 @@ const threats = destinations.map((nodeId) => {
 })
 
 assert.ok(new Set(threats).size >= 2, 'different route locations must not all open with the same deterministic threat')
+
+let scopedThreatRuns = 0
+for (const cartridge of [wanderlight, wanderlightEn]) {
+  const scopedInitial = createInitialSave(cartridge)
+  for (const node of cartridge.initialMap) {
+    for (let cycle = 0; cycle < 24; cycle += 1) {
+      const save = {
+        ...scopedInitial,
+        scene: 20 + cycle,
+        location: node.label,
+        map: scopedInitial.map.map((entry) => ({ ...entry, current: entry.id === node.id, visited: entry.visited || entry.id === node.id })),
+        danger: { ...scopedInitial.danger, safeTurns: 99, cycle },
+      }
+      const directive = buildDangerDirective(save, cartridge, `scope-${node.id}-${cycle}`)!
+      const allowed = cartridge.dangerDirector?.threatLocations?.[directive.threat]
+      assert.ok(!allowed?.length || allowed.includes(node.id), `${directive.threat} cannot be scheduled at ${node.label}`)
+      scopedThreatRuns += 1
+    }
+  }
+}
+
+const whitecapNode = initial.map.find((node) => node.id === 'whitecap-baths')!
+const whitecapSave = {
+  ...initial,
+  scene: 20,
+  location: whitecapNode.label,
+  sceneLocation: '白浪浴镇·洗衣房',
+  choices: [{ id: 'repair-belt', label: '检查皮带张力' }, { id: 'repair-leak', label: '拧紧漏水接头' }],
+  map: initial.map.map((node) => ({ ...node, current: node.id === whitecapNode.id, visited: node.visited || node.id === whitecapNode.id })),
+  danger: { ...initial.danger, safeTurns: 99, cycle: 0 },
+}
+const whitecapDirective = buildDangerDirective(whitecapSave, wanderlight, '检查皮带张力')!
+assert.notEqual(whitecapDirective.threat, '银雨封闭葡萄丘道路', 'a vineyard-only road closure cannot be selected in the Whitecap washhouse')
+
+const mismatchedWashhouse = parseStoryProtocol(`你和媛夕留在洗衣房检查传动皮带与漏水接头。工人把扳手和润滑油递给你们。
+[scene_location: location="白浪浴镇·洗衣房"]
+[choices: "继续检查传动皮带"|"先修漏水接头"]`, 'zh')
+const rejectedScheduledThreat = prepareTurnCandidate({
+  save: whitecapSave,
+  cartridge: wanderlight,
+  action: '检查皮带张力',
+  parsed: mismatchedWashhouse,
+  dangerDirective: whitecapDirective,
+})
+assert.ok(rejectedScheduledThreat.violations.includes('turn.scheduled_threat_requires_visible_establishment'))
+assert.ok(rejectedScheduledThreat.violations.includes('turn.scheduled_threat_choices_must_address_threat'))
+assert.equal(rejectedScheduledThreat.canCommitWithoutReplies, false, 'an invisible scheduled threat must be repaired instead of committed as a replyless safe turn')
+
+const reducerDefense = applyParsedScene(
+  whitecapSave,
+  mismatchedWashhouse,
+  wanderlight,
+  '检查皮带张力',
+  undefined,
+  undefined,
+  whitecapDirective,
+)
+assert.equal(reducerDefense.danger.phase, 'calm', 'a hidden or mismatched directive cannot enter authoritative state')
+assert.ok(reducerDefense.choices.every((choice) => !choice.label.includes(whitecapDirective.threat)), 'a hidden directive cannot replace current replies with unrelated threat choices')
+
+const establishedWashhouse = parseStoryProtocol(`洗衣房的工人刚拧紧接头，${whitecapDirective.threat}的消息就从门外传来。这个变化会直接影响你们眼前的工作。
+[scene_location: location="白浪浴镇·洗衣房"]
+[encounter: phase="warning" kind="${whitecapDirective.threat}" severity="${whitecapDirective.severity}" outcome="active"]
+[choices: "先查清${whitecapDirective.threat}的具体影响"|"暂停工作，应对${whitecapDirective.threat}"]`, 'zh')
+const acceptedScheduledThreat = prepareTurnCandidate({
+  save: whitecapSave,
+  cartridge: wanderlight,
+  action: '检查皮带张力',
+  parsed: establishedWashhouse,
+  dangerDirective: whitecapDirective,
+})
+assert.equal(acceptedScheduledThreat.violations.some((violation) => violation.startsWith('turn.scheduled_threat')), false)
+const committedScheduledThreat = applyParsedScene(whitecapSave, acceptedScheduledThreat.parsed, wanderlight, '检查皮带张力', undefined, undefined, whitecapDirective)
+assert.equal(committedScheduledThreat.danger.phase, 'warning')
+assert.equal(committedScheduledThreat.danger.currentThreat, whitecapDirective.threat)
+assert.ok(committedScheduledThreat.choices.every((choice) => choice.label.includes(whitecapDirective.threat)))
+
+const dangerBlockedShift = resolveDomainAction(
+  { ...whitecapSave, danger: { ...whitecapSave.danger, phase: 'warning' as const, currentThreat: whitecapDirective.threat } },
+  wanderlight,
+  '找一份短工',
+)
+assert.equal(dangerBlockedShift?.status, 'rejected', 'ordinary work cannot silently bypass an active danger')
+assert.ok(dangerBlockedShift?.reasons.some((reason) => reason.includes('危险')))
 
 const warningSave = {
   ...initial,
@@ -57,4 +143,4 @@ assert.deepEqual(JSON.parse(migrated.blocks.find((block) => block.id === 'choice
 assert.equal(migrated.facts['legacy-danger-method-copy-repaired-v1'], true)
 assert.deepEqual(repairLegacyDangerMethodChoices(legacySave, wanderlightEn).choices.map((choice) => choice.label), wanderlightEn.dangerDirector?.methods, '切换语言时也必须把另一种语言的旧文案迁移到当前语言')
 
-console.log(JSON.stringify({ ok: true, checks: ['location-varied-threat-selection', 'active-threat-stability', 'replyless-danger-methods', 'plain-language-methods', 'legacy-method-copy-migration'] }))
+console.log(JSON.stringify({ ok: true, scopedThreatRuns, checks: ['location-varied-threat-selection', 'location-scoped-threat-matrix', 'scheduled-threat-visible-establishment', 'scheduled-threat-reducer-defense', 'scheduled-threat-positive-control', 'active-danger-blocks-work', 'active-threat-stability', 'replyless-danger-methods', 'plain-language-methods', 'legacy-method-copy-migration'] }))

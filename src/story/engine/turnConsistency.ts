@@ -2,7 +2,8 @@ import { encodeChoiceRecord } from './choiceInput'
 import { filterGroundedChoices } from './continuity'
 import { resolveDomainAction } from './domainRules'
 import { validateCharacterContinuity } from './characterContinuity'
-import type { Choice, MapNode, ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
+import { dangerDirectiveEstablished, dangerTextGrounded } from './dangerDirector'
+import type { Choice, DangerDirective, MapNode, ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
 
 function clean(value: string): string {
   return value.toLocaleLowerCase().replace(/[\s，。！？、,.!?;；:："“”'‘’()（）\-—_/]+/g, '')
@@ -466,6 +467,7 @@ export function validateTurnConsistency(
   cartridge: StoryCartridge,
   imagePrompt?: string,
   action?: string,
+  dangerDirective?: DangerDirective,
 ): string[] {
   const violations = new Set<string>()
   const location = effectiveLocation(save, parsed)
@@ -515,6 +517,16 @@ export function validateTurnConsistency(
       if (!sameThread || !threadGroundedInProse(activeThreat, prose, cartridge.locale)) {
         violations.add('turn.active_threat_cannot_disappear')
       }
+    }
+  }
+  if (dangerDirective) {
+    if (!dangerDirectiveEstablished(parsed, dangerDirective, cartridge.locale)) {
+      violations.add('turn.scheduled_threat_requires_visible_establishment')
+    }
+    if (dangerDirective.phase !== 'resolution'
+      && choices.length
+      && choices.some((choice) => !dangerTextGrounded(dangerDirective.threat, choice, cartridge.locale))) {
+      violations.add('turn.scheduled_threat_choices_must_address_threat')
     }
   }
 

@@ -61,10 +61,52 @@ function scheduledTurn(cartridge: StoryCartridge, cycle: number): number {
 }
 
 function selectThreat(save: Pick<StorySave, 'location' | 'map'>, cartridge: StoryCartridge, cycle: number): string {
-  const threats = cartridge.dangerDirector?.threatPalette ?? []
+  const config = cartridge.dangerDirector
+  const threats = config?.threatPalette ?? []
   const currentNode = save.map.find((node) => node.current)
   const placeKey = currentNode?.id ?? save.location
-  return threats[stableHash(`${cartridge.id}:threat:${placeKey}:${cycle}`) % Math.max(1, threats.length)] ?? 'an immediate world-appropriate threat'
+  const compatible = threats.filter((threat) => {
+    const allowed = config?.threatLocations?.[threat]
+    return !allowed?.length || (currentNode ? allowed.includes(currentNode.id) : false)
+  })
+  const candidates = compatible.length ? compatible : threats.filter((threat) => !config?.threatLocations?.[threat]?.length)
+  return candidates[stableHash(`${cartridge.id}:threat:${placeKey}:${cycle}`) % Math.max(1, candidates.length)] ?? 'an immediate world-appropriate threat'
+}
+
+function cleanDangerText(value: string): string {
+  return value.toLocaleLowerCase().replace(/[\s，。！？、,.!?;；:："“”'‘’()（）\-—_/]+/g, '')
+}
+
+/** A scheduled danger is real only when the visible prose and exact protocol
+ * tag establish the same threat. This is intentionally stronger than general
+ * thread similarity because the local director supplied an exact tag. */
+export function dangerTextGrounded(threat: string, text: string, locale: StoryCartridge['locale']): boolean {
+  const source = cleanDangerText(text)
+  const target = cleanDangerText(threat)
+  if (!source || !target) return false
+  if (source.includes(target)) return true
+  if (locale === 'en') {
+    const stop = new Set(['about', 'after', 'again', 'before', 'being', 'could', 'their', 'there', 'these', 'those', 'would'])
+    const terms = [...new Set(threat.toLocaleLowerCase().match(/[a-z]{4,}/g) ?? [])].filter((term) => !stop.has(term))
+    const matches = terms.filter((term) => source.includes(cleanDangerText(term))).length
+    return matches >= Math.min(2, terms.length)
+  }
+  const pairs = [...new Set(Array.from({ length: Math.max(0, target.length - 1) }, (_, index) => target.slice(index, index + 2)))]
+    .filter((term) => !['突然', '现在', '已经', '事情', '情况', '现场'].includes(term))
+  return pairs.filter((term) => source.includes(term)).length >= Math.min(2, pairs.length)
+}
+
+export function dangerDirectiveEstablished(
+  parsed: ParsedScene,
+  directive: DangerDirective,
+  locale: StoryCartridge['locale'],
+): boolean {
+  const encounter = [...parsed.commands].reverse().find((command) => command.type === 'encounter')
+  if (encounter?.type !== 'encounter' || encounter.phase !== directive.phase || !encounter.kind) return false
+  if (cleanDangerText(encounter.kind) !== cleanDangerText(directive.threat)) return false
+  const prose = parsed.blocks.filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
+    .map((block) => `${block.speaker ?? ''} ${block.text}`).join('\n')
+  return dangerTextGrounded(directive.threat, prose, locale)
 }
 
 function dangerCheck(save: StorySave, cartridge: StoryCartridge, actionId: string, severity: number) {
@@ -115,9 +157,9 @@ export function dangerDirectiveContract(directive: DangerDirective | undefined):
       : 'Physical combat is one valid method, never the only method.'
   const tag = `[encounter: phase="${directive.phase}" kind="${directive.threat}" severity="${directive.severity}"${directive.check ? ` outcome="${directive.check.outcome}"` : ' outcome="active"'}]`
   if (directive.phase === 'warning') return `
-DANGER DIRECTIVE IS AUTHORITATIVE. This turn MUST introduce a readable early warning of this current-world threat: ${directive.threat}. Severity ${directive.severity}/5. Do not resolve or skip it yet. Let the player notice, prepare for, investigate, or avoid it. Offer one to five concrete, materially distinct choices drawn only from methods that are executable now: ${methods}. Do not pad or truncate to three. ${combat} Emit this exact encounter tag: ${tag}`
+DANGER DIRECTIVE IS AUTHORITATIVE. This turn MUST introduce a readable early warning of this current-world threat: ${directive.threat}. Severity ${directive.severity}/5. Do not resolve or skip it yet. Let the player notice, prepare for, investigate, or avoid it. Offer one to five concrete, materially distinct choices drawn only from methods that are executable now: ${methods}. Every choice must name the concrete threat or repeat an identifying phrase from it, so the player can see exactly what the action addresses. Do not pad or truncate to three. ${combat} Emit this exact encounter tag: ${tag}`
   if (directive.phase === 'confrontation') return `
-DANGER DIRECTIVE IS AUTHORITATIVE. Escalate the established threat into an immediate obstacle or confrontation now: ${directive.threat}. Severity ${directive.severity}/5. Do not resolve it before the player chooses a response. Offer one to five concrete, materially distinct choices drawn only from methods that are executable now: ${methods}. Do not pad or truncate to three. ${combat} Emit this exact encounter tag: ${tag}`
+DANGER DIRECTIVE IS AUTHORITATIVE. Escalate the established threat into an immediate obstacle or confrontation now: ${directive.threat}. Severity ${directive.severity}/5. Do not resolve it before the player chooses a response. Offer one to five concrete, materially distinct choices drawn only from methods that are executable now: ${methods}. Every choice must name the concrete threat or repeat an identifying phrase from it, so the player can see exactly what the action addresses. Do not pad or truncate to three. ${combat} Emit this exact encounter tag: ${tag}`
   const check = directive.check!
   return `
 DANGER DIRECTIVE IS AUTHORITATIVE. Resolve the player's chosen response to the established threat now: ${directive.threat}. The local engine has already fixed the check and refresh cannot reroll it: skill="${check.skill}", dc=${check.dc}, roll=${check.roll}, modifier=${check.modifier}, total=${check.total}, outcome=${check.outcome}. Narrate exactly that outcome and its immediate aftermath; never replace the roll, soften a failure into success, or invent a second check. Emit [skill_check: skill="${check.skill}" dc="${check.dc}" rolls="${check.roll}" modifier="${check.modifier}" total="${check.total}" result="${check.outcome}"] and this exact encounter tag: ${tag}. End at the next decision after the consequence. ${combat}`
@@ -242,6 +284,13 @@ export function settleDangerTurn(
   const state = normalizeDangerState(before.danger)
   const encounter = [...parsed.commands].reverse().find((command) => command.type === 'encounter')
   const effects: StoryBlock[] = []
+
+  // Reducer-level defense for demo mode, legacy callers and future pipeline
+  // regressions: a hidden or mismatched directive must never mutate authority.
+  if (directive && !dangerDirectiveEstablished(parsed, directive, cartridge.locale)) {
+    after.danger = state
+    return effects
+  }
 
   if (directive?.phase === 'warning') {
     after.danger = { ...state, phase: 'warning', safeTurns: 0, severity: directive.severity, currentThreat: directive.threat }

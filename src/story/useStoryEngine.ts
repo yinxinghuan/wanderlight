@@ -326,7 +326,15 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
       const domainResolution = resolveDomainAction(base, activeCartridge, normalizedAction)
       const authoredOpeningTurn = domainResolution ? undefined : resolveDeterministicOpeningTurn(base, activeCartridge, normalizedAction)
       const authoredChoiceTurn = domainResolution || authoredOpeningTurn ? undefined : resolveDeterministicChoiceTurn(base, activeCartridge, normalizedAction)
-      const scheduledDanger = domainResolution?.status === 'rejected' || domainSuppressesDanger(domainResolution) ? undefined : buildDangerDirective(base, activeCartridge, normalizedAction)
+      // A deterministic authored turn already owns this calm beat. Scheduling a
+      // second event on top of it is what previously made a washhouse repair
+      // suddenly sprout unrelated vineyard-road choices.
+      const authoredOwnsCalmTurn = base.danger.phase === 'calm' && Boolean(authoredOpeningTurn || authoredChoiceTurn)
+      const scheduledDanger = domainResolution?.status === 'rejected'
+        || domainSuppressesDanger(domainResolution)
+        || authoredOwnsCalmTurn
+        ? undefined
+        : buildDangerDirective(base, activeCartridge, normalizedAction)
       const presetEventResolution = domainResolution || authoredOpeningTurn || authoredChoiceTurn || scheduledDanger
         ? undefined
         : resolvePresetEventTurn(base, activeCartridge, normalizedAction)
@@ -346,7 +354,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
       if (!domainResolution) {
         let prepared = prepareTurnCandidate({
           save: base, parsed, cartridge: activeCartridge, action: normalizedAction,
-          imagePrompt: result.imagePrompt, trustedAuthored: Boolean(authoredTurn), skipTurnValidation: mode === 'demo',
+          imagePrompt: result.imagePrompt, dangerDirective, trustedAuthored: Boolean(authoredTurn), skipTurnValidation: mode === 'demo',
         })
         parsed = prepared.parsed
         if (prepared.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
@@ -370,7 +378,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
           parsed = parseStoryProtocol(result.content, actionLocale)
           prepared = prepareTurnCandidate({
             save: base, parsed, cartridge: activeCartridge, action: normalizedAction,
-            imagePrompt: result.imagePrompt, skipTurnValidation: mode === 'demo',
+            imagePrompt: result.imagePrompt, dangerDirective, skipTurnValidation: mode === 'demo',
           })
           parsed = prepared.parsed
           if (prepared.discardedImage) result = { ...result, imagePrompt: undefined, imageSubject: undefined, imageCharacterId: undefined }
@@ -386,7 +394,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
               setProgress(null)
               return
             }
-            if (displayedRouteDestination) {
+            if (displayedRouteDestination && base.danger.phase === 'calm') {
               commit((current) => applyDisplayedRouteFallback(
                 localizeKnownState(current, cartridge, activeCartridge), activeCartridge, normalizedAction, displayedRouteDestination,
               ))

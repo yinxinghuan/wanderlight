@@ -1,10 +1,11 @@
-import type { ParsedScene, StoryCartridge, StorySave } from '../types'
+import type { DangerDirective, ParsedScene, StoryCartridge, StorySave } from '../types'
 import { canonicalizePaymentMetadata, validatePaymentConsistency } from './paymentConsistency'
 import { canCommitGeneratedTurnWithoutReplies, canonicalizeTurnMetadata, validateTurnConsistency } from './turnConsistency'
 
 export interface PreparedTurnCandidate {
   parsed: ParsedScene
   imagePrompt?: string
+  dangerDirective?: DangerDirective
   discardedImage: boolean
   paymentViolations: string[]
   turnViolations: string[]
@@ -23,6 +24,7 @@ export function prepareTurnCandidate(options: {
   cartridge: StoryCartridge
   action: string
   imagePrompt?: string
+  dangerDirective?: DangerDirective
   trustedAuthored?: boolean
   skipTurnValidation?: boolean
 }): PreparedTurnCandidate {
@@ -36,13 +38,14 @@ export function prepareTurnCandidate(options: {
     options.trustedAuthored,
   )
   const paymentViolations = validatePaymentConsistency(options.save, canonical.parsed, options.cartridge, options.action)
-  const turnViolations = options.skipTurnValidation
+  const turnViolations = options.skipTurnValidation && !options.dangerDirective
     ? []
-    : validateTurnConsistency(options.save, canonical.parsed, options.cartridge, canonical.imagePrompt, options.action)
+    : validateTurnConsistency(options.save, canonical.parsed, options.cartridge, canonical.imagePrompt, options.action, options.dangerDirective)
   const violations = [...paymentViolations, ...turnViolations]
   return {
     parsed: canonical.parsed,
     imagePrompt: canonical.imagePrompt,
+    dangerDirective: options.dangerDirective,
     discardedImage: canonical.discardedImage,
     paymentViolations,
     turnViolations,

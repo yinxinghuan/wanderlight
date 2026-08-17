@@ -1,7 +1,7 @@
 import { SCENE_IMAGE_PROMPT_VERSION, type CharacterDefinition, type CharacterVisualIdentity, type DangerDirective, type DomainActionResolution, type ImageBlockStatus, type MapNode, type ParsedCommand, type ParsedScene, type PresetEventResolution, type SceneImageSubject, type StoryBlock, type StoryCartridge, type StoryCharacter, type StorySave } from '../types'
 import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
-import { contextualDangerChoiceLabels, createInitialDangerState, dangerDirectiveChoices, normalizeDangerState, settleDangerTurn } from './dangerDirector'
+import { contextualDangerChoiceLabels, createInitialDangerState, dangerDirectiveChoices, dangerDirectiveEstablished, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
 import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, domainSuppressesDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
@@ -752,7 +752,12 @@ export function applyParsedScene(
   presetEventResolution?: PresetEventResolution,
 ): StorySave {
   const parsedCheckpoint = parsed.commands.some((command) => command.type === 'session_end')
-  const activeDangerDirective = parsedCheckpoint || domainSuppressesDanger(domainResolution) ? undefined : dangerDirective
+  const activeDangerDirective = parsedCheckpoint
+    || domainSuppressesDanger(domainResolution)
+    || !dangerDirective
+    || !dangerDirectiveEstablished(parsed, dangerDirective, cartridge.locale)
+    ? undefined
+    : dangerDirective
   const commandDestination = parsed.commands.find((command) => command.type === 'map_update')
   const domainMap = domainResolution?.status === 'accepted' ? domainResolution.effects.find((effect) => effect.type === 'map') : undefined
   const domainDestination = domainMap?.type === 'map'
