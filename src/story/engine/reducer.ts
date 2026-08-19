@@ -3,7 +3,7 @@ import { t } from '../i18n'
 import { chooseSceneImage } from './imageDirector'
 import { contextualDangerChoiceLabels, createInitialDangerState, dangerDirectiveChoices, dangerDirectiveEstablished, normalizeDangerState, settleDangerTurn } from './dangerDirector'
 import { authoredDecisionContext, createTransitionBlock, filterGroundedChoices } from './continuity'
-import { activeStatFloorRule, applyDomainResolution, domainAllowsModelCommand, domainSuppressesDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
+import { activeStatFloorRule, applyDomainRecommendationPolicy, applyDomainResolution, domainAllowsModelCommand, domainSuppressesDanger, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './domainRules'
 import { encodeChoiceRecord } from './choiceInput'
 import { resolveDeterministicChoiceTurn } from './authoredTurns'
 import { bindChoiceDestinations, inferActionDestination, mergeRouteHints, playerDeclaredLocationAlias, stableDynamicLocationId, validatedDynamicRouteHints } from './turnConsistency'
@@ -35,8 +35,12 @@ export function createInitialSave(cartridge: StoryCartridge, remoteChatId?: stri
     danger: createInitialDangerState(),
     sessionEnded: false,
   }
+  syncDomainDerivedState(initial, cartridge)
+  initial.choices = applyDomainRecommendationPolicy(initial, cartridge, initial.choices)
+  if (initial.choices.length === 0) initial.choices = createRecoveryChoices(initial, cartridge)
   initial.choices = bindChoiceDestinations(initial.choices, initial, cartridge)
-  return syncDomainDerivedState(initial, cartridge)
+  initial.blocks = initial.blocks.map((block) => block.id === 'choices-0' ? createChoiceRecordBlock(0, initial.choices) : block)
+  return initial
 }
 
 export function mergeAuthoredMapNodes(persisted: MapNode[] | undefined, cartridge: StoryCartridge): MapNode[] {
@@ -750,6 +754,7 @@ export function applyParsedScene(
   domainResolution?: DomainActionResolution,
   imageCharacterId?: string,
   presetEventResolution?: PresetEventResolution,
+  suppressSceneImage = false,
 ): StorySave {
   const parsedCheckpoint = parsed.commands.some((command) => command.type === 'session_end')
   const activeDangerDirective = parsedCheckpoint
@@ -989,6 +994,11 @@ export function applyParsedScene(
     next.choices = statFloorChoices(next, cartridge) ?? next.choices
   }
 
+  if (!next.sessionEnded && !floor) {
+    next.choices = applyDomainRecommendationPolicy(next, cartridge, next.choices)
+    if (next.choices.length === 0) next.choices = createRecoveryChoices(next, cartridge)
+  }
+
   if (!next.sessionEnded && next.choices.length) next.choices = bindChoiceDestinations(next.choices, next, cartridge)
 
   const domainImageNode = domainMap?.type === 'map'
@@ -1003,7 +1013,7 @@ export function applyParsedScene(
         }],
       }
     : adjudicatedParsed
-  const image = domainResolution?.status === 'rejected'
+  const image = domainResolution?.status === 'rejected' || suppressSceneImage
     ? { prompt: '' }
     : chooseSceneImage(
         save, next, imageParsed, cartridge, imagePrompt,

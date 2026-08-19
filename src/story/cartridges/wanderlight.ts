@@ -87,6 +87,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
     ...wanderlightExpansionTravel(locale),
   ]
   return {
+    authorityMode: 'shadow',
     legacyChoiceSets: [[
       s('接一份九十分钟短工（报酬 9 枚）', 'Take a ninety-minute shift (9 coin)'),
       s('吃一顿热饭', 'Get something to eat'),
@@ -127,6 +128,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'catch-breath', intent: s('原地休息四十五分钟', 'rest in place for forty-five minutes'),
+        choiceLabel: s('原地坐下，休息四十五分钟', 'Sit down and rest for forty-five minutes'), recommend: true, rank: 40,
         match: [s('原地坐下，休息四十五分钟', 'sit down and rest for forty-five minutes'), s('再休息四十五分钟', 'rest for another forty-five minutes'), s('原地休息', 'rest in place'), s('慢慢恢复呼吸', 'catch my breath'), s('休息', 'rest'), s('歇一会', 'take a break'), s('小睡', 'nap'), s('眯一会', 'doze')],
         intentGuard: 'rest-commitment',
         dangerPolicy: 'suppress',
@@ -140,6 +142,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'retreat-to-rest', intent: s('前往最近的公共休息处', 'reach the nearest public rest area'),
+        choiceLabel: s('去最近的公共休息处', 'Reach the nearest public rest area'), recommend: true, rank: 90,
         match: [s('放弃当前行动，去最近的公共休息处', 'abandon the current action and reach the nearest public rest area'), s('去最近的公共休息处', 'reach the nearest public rest area'), s('找公共休息处', 'find a public rest area')],
         intentGuard: 'rest-commitment',
         dangerPolicy: 'withdraw',
@@ -153,6 +156,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'rest-until-morning', intent: s('结束今天并休息到清晨', 'end the day and rest until morning'),
+        choiceLabel: s('结束今天，休息到清晨', 'End the day and rest until morning'), recommend: true, rank: 100,
         match: [s('结束今天，休息到清晨', 'end the day and rest until morning'), s('休息到清晨', 'rest until morning'), s('今天不再行动', 'stop for the day')],
         intentGuard: 'rest-commitment',
         dangerPolicy: 'suppress',
@@ -166,6 +170,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'local-shift', intent: s('完成一份当地短工', 'complete a local shift'),
+        choiceLabel: s('找一份短工', 'Look for a short job'), recommend: true, rank: 10,
         match: [s('接一份九十分钟短工（报酬 9 枚）', 'take a ninety-minute shift (9 coin)'), s('找一份短工', 'look for a short job'), s('再找一份短工', 'look for another short job'), s('另外找一份短工', 'find another short job'), s('找另一份班', 'find another shift'), s('再接一班', 'take another shift'), s('再做一份短工', 'do another short job'), s('做短工', 'take a local shift'), s('继续干活', 'keep working'), s('帮忙干活', 'help with the work'), s('完成这份工作', 'finish the job'), s('干完这份活', 'complete the shift'), s('结清工钱', 'collect my pay'), s('领取报酬', 'receive the payment')],
         repeatPolicy: {
           scope: 'location-day',
@@ -185,6 +190,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'hot-meal', intent: s('吃一顿热饭', 'eat a hot meal'),
+        choiceLabel: s('吃一顿热饭', 'Eat a hot meal'), recommend: true, rank: 20,
         match: [s('吃一顿热饭', 'eat a hot meal'), s('吃点东西', 'get something to eat'), s('买一顿饭', 'buy a meal')],
         dangerPolicy: 'suppress',
         successContinuation: 'resume',
@@ -197,6 +203,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'overnight-room', intent: s('住一晚并保存', 'stay overnight and save'),
+        choiceLabel: s('找个房间过夜', 'Get a room for the night'), recommend: true, rank: 30,
         match: [s('住一晚', 'stay for the night'), s('今晚住下', 'stay overnight'), s('住到明早', 'stay the night'), s('租个房间', 'rent a room'), s('租这间房', 'rent the room'), s('找个房间过夜', 'get a room for the night'), s('在旅店休息', 'rest at the inn'), s('支付房费', 'pay for the room'), s('付房费', 'pay the room fee'), s('订一间房', 'book a room'), s('订这间房', 'book the room'), s('预订房间', 'reserve a room')],
         intentGuard: 'rest-commitment',
         dangerPolicy: 'suppress',
@@ -210,6 +217,7 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       },
       {
         id: 'carriage-rest', intent: s('在月线车厢休息', 'rest in the Moonline carriage'),
+        choiceLabel: s('靠着车窗休息', 'Rest by the window'), recommend: true, rank: 25,
         match: [s('在车厢休息', 'rest in the carriage'), s('在车上眯一会', 'nap on the train'), s('靠着车窗休息', 'rest by the window')],
         intentGuard: 'rest-commitment',
         dangerPolicy: 'suppress',
@@ -224,6 +232,9 @@ function domainRules(locale: Locale): NonNullable<StoryCartridge['domainRules']>
       ...travelDestinations.map(({ nodeId, label, intent, arrivalChoices }) => ({
         id: `travel-${nodeId}`,
         intent,
+        choiceLabel: intent,
+        recommend: true,
+        rank: 50,
         match: [intent, s(`独自前往${label}`, `travel alone to ${label}`), s(`买票前往${label}`, `buy passage to ${label}`)],
         requirements: [
           safeOrdinaryAction,

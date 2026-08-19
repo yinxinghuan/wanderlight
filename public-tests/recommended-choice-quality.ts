@@ -56,6 +56,23 @@ for (const locale of ['zh', 'en'] as const) {
   assert.deepEqual(choiceLabels(repeated), [concrete], `${locale}: an immediate retry-prefixed copy of the completed action is removed`)
   cases += 1
 
+  const objectiveRestatement = prepareTurnCandidate({
+    save: active,
+    cartridge,
+    action,
+    parsed: parseStoryProtocol(zh
+      ? `俘虏的同伴仍在仓门外试图营救，货箱就在薄弱门闩旁。
+[scene_location: location="${location}"]
+[encounter: phase="confrontation" kind="${threat}" severity="3" outcome="active"]
+[choices: "${objective}"|"${concrete}"]`
+      : `The prisoner's allies are still trying to break in, and cargo sits beside the weak latch.
+[scene_location: location="${location}"]
+[encounter: phase="confrontation" kind="${threat}" severity="3" outcome="active"]
+[choices: "${objective}"|"${concrete}"]`, locale),
+  })
+  assert.deepEqual(choiceLabels(objectiveRestatement), [concrete], `${locale}: the objective is context, not an executable recommendation`)
+  cases += 1
+
   const genericOnly = prepareTurnCandidate({
     save: active,
     cartridge,
@@ -73,4 +90,4 @@ for (const locale of ['zh', 'en'] as const) {
   cases += 1
 }
 
-console.log(JSON.stringify({ ok: true, locales: 2, cases, checks: ['generic-placeholder-filter', 'immediate-repeat-filter', 'active-thread-recovery'] }))
+console.log(JSON.stringify({ ok: true, locales: 2, cases, checks: ['generic-placeholder-filter', 'immediate-repeat-filter', 'objective-is-not-an-action', 'active-thread-recovery'] }))

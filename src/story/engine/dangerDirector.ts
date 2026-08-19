@@ -1,5 +1,5 @@
 import { t } from '../i18n'
-import type { DangerDirective, DangerOutcome, ParsedScene, StoryBlock, StoryCartridge, StoryDangerState, StorySave } from '../types'
+import type { DangerDirective, DangerOutcome, DemoTurn, ParsedScene, StoryBlock, StoryCartridge, StoryDangerState, StorySave } from '../types'
 import { encodeChoiceRecord } from './choiceInput'
 
 function clamp(value: number, min: number, max: number): number {
@@ -109,6 +109,41 @@ export function dangerDirectiveEstablished(
   return dangerTextGrounded(directive.threat, prose, locale)
 }
 
+/**
+ * Preserve a valid player-action consequence when the model visibly described
+ * the scheduled warning/confrontation but omitted or malformed its protocol.
+ * The local director owns the exact threat, phase and emergency replies, so it
+ * may repair those fields without guessing. Resolution is intentionally
+ * excluded because its prose must reflect the fixed roll and outcome.
+ */
+export function canonicalizeVisibleDangerDirective(
+  parsed: ParsedScene,
+  directive: DangerDirective | undefined,
+  locale: StoryCartridge['locale'],
+): { parsed: ParsedScene; repaired: boolean } {
+  if (!directive || directive.phase === 'resolution') return { parsed, repaired: false }
+  const prose = parsed.blocks.filter((block) => block.kind === 'narration' || block.kind === 'dialogue')
+    .map((block) => `${block.speaker ?? ''} ${block.text}`).join('\n')
+  if (!dangerTextGrounded(directive.threat, prose, locale)) return { parsed, repaired: false }
+  const choices = [...parsed.commands].reverse().find((command) => command.type === 'choices')
+  const choicesGrounded = choices?.type === 'choices'
+    && choices.choices.length > 0
+    && choices.choices.every((choice) => dangerTextGrounded(directive.threat, choice, locale))
+  if (dangerDirectiveEstablished(parsed, directive, locale) && choicesGrounded) return { parsed, repaired: false }
+  const replacementChoices = contextualDangerChoiceLabels(directive.threat, directive.methods, locale).slice(0, 5)
+  return {
+    repaired: true,
+    parsed: {
+      ...parsed,
+      commands: [
+        ...parsed.commands.filter((command) => command.type !== 'encounter' && command.type !== 'choices'),
+        { type: 'encounter', phase: directive.phase, kind: directive.threat, severity: directive.severity },
+        { type: 'choices', choices: replacementChoices },
+      ],
+    },
+  }
+}
+
 function dangerCheck(save: StorySave, cartridge: StoryCartridge, actionId: string, severity: number) {
   const resolution = cartridge.dangerDirector!.resolution
   const roll = stableHash(`${cartridge.id}:${save.scene + 1}:${save.danger.cycle}:${actionId}:danger-roll`) % 20 + 1
@@ -190,9 +225,32 @@ export function contextualDangerChoiceLabels(
     ? `${subject.slice(0, locale === 'zh' ? 25 : 55).trim()}…`
     : subject
   const labels = locale === 'zh'
-    ? [`确认“${concise}”的具体情况`, `立即应对“${concise}”`, `撤离“${concise}”影响的现场`]
+    ? [`检查${concise}`, `应对${concise}`, `离开${concise}`]
     : [`Confirm the facts about ${concise}`, `Respond directly to ${concise}`, `Withdraw from the scene of ${concise}`]
   return [...new Set(labels)].filter((label) => label.length <= 96)
+}
+
+/**
+ * Active danger is a real input gate. An unrelated free-form action cannot be
+ * sent to the model and later erase the threat; reject it locally with the
+ * exact reason and keep the same authoritative thread available.
+ */
+export function resolveActiveDangerDeflection(
+  save: StorySave,
+  cartridge: StoryCartridge,
+  action: string,
+): DemoTurn | undefined {
+  const threat = save.danger.currentThreat?.trim()
+  if (save.danger.phase === 'calm' || !threat || dangerTextGrounded(threat, action, cartridge.locale)) return undefined
+  const choices = contextualDangerChoiceLabels(threat, cartridge.dangerDirector?.methods ?? [], cartridge.locale)
+  const text = cartridge.locale === 'zh'
+    ? `眼前的“${threat}”还没有处理完。你暂时不能把它留在原地去做另一件事；当前地点、任务和数值都没有改变。`
+    : `The immediate threat, “${threat},” is still unresolved. You cannot leave it in place to pursue a separate action; your location, objective, and stats remain unchanged.`
+  return {
+    match: [],
+    suppressImage: true,
+    content: `${text}\n[scene_location: location="${save.sceneLocation ?? save.location}"]\n[encounter: phase="${save.danger.phase}" kind="${threat}" severity="${save.danger.severity}" outcome="active"]\n[choices: ${choices.map((choice) => `"${choice}"`).join('|')}]`,
+  }
 }
 
 /** Rewrite only exact legacy danger-method labels that are still actionable in

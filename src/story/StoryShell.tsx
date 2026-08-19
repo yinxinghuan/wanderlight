@@ -482,7 +482,12 @@ function WorldDrawer({ active, setActive, detail, setDetail, cartridge, engine, 
 
 function Game({ cartridge, mode, chatId, onSelect, onLocaleChange }: { cartridge: StoryCartridge; mode: StoryMode; chatId?: string; onSelect: (id: string) => void; onLocaleChange: (locale: Locale) => void }) {
   const player = usePlayerProfile()
-  const engine = useStoryEngine(cartridge, mode, chatId, { ready: player.loaded, refUrl: player.imageRefUrl })
+  const engineCartridge = useMemo<StoryCartridge>(() => {
+    const authorityFirstCanary = new URLSearchParams(window.location.search).get('authority_first') === '1'
+    if (!authorityFirstCanary || !cartridge.domainRules) return cartridge
+    return { ...cartridge, domainRules: { ...cartridge.domainRules, authorityMode: 'authority-first' } }
+  }, [cartridge])
+  const engine = useStoryEngine(engineCartridge, mode, chatId, { ready: player.loaded, refUrl: player.imageRefUrl })
   const audio = useStoryAudio(cartridge, engine.save)
   const [worldOpen, setWorldOpen] = useState(false)
   const [worldTab, setWorldTab] = useState<DrawerId>('party')

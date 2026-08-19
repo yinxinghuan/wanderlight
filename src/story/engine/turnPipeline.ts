@@ -1,6 +1,7 @@
 import type { DangerDirective, ParsedScene, StoryCartridge, StorySave } from '../types'
 import { canonicalizePaymentMetadata, validatePaymentConsistency } from './paymentConsistency'
 import { canCommitGeneratedTurnWithoutReplies, canonicalizeTurnMetadata, validateTurnConsistency } from './turnConsistency'
+import { canonicalizeVisibleDangerDirective } from './dangerDirector'
 
 export interface PreparedTurnCandidate {
   parsed: ParsedScene
@@ -11,6 +12,7 @@ export interface PreparedTurnCandidate {
   turnViolations: string[]
   violations: string[]
   canCommitWithoutReplies: boolean
+  repairedDangerMetadata: boolean
 }
 
 /**
@@ -37,13 +39,14 @@ export function prepareTurnCandidate(options: {
     options.action,
     options.trustedAuthored,
   )
-  const paymentViolations = validatePaymentConsistency(options.save, canonical.parsed, options.cartridge, options.action)
+  const dangerSafe = canonicalizeVisibleDangerDirective(canonical.parsed, options.dangerDirective, options.cartridge.locale)
+  const paymentViolations = validatePaymentConsistency(options.save, dangerSafe.parsed, options.cartridge, options.action)
   const turnViolations = options.skipTurnValidation && !options.dangerDirective
     ? []
-    : validateTurnConsistency(options.save, canonical.parsed, options.cartridge, canonical.imagePrompt, options.action, options.dangerDirective)
+    : validateTurnConsistency(options.save, dangerSafe.parsed, options.cartridge, canonical.imagePrompt, options.action, options.dangerDirective)
   const violations = [...paymentViolations, ...turnViolations]
   return {
-    parsed: canonical.parsed,
+    parsed: dangerSafe.parsed,
     imagePrompt: canonical.imagePrompt,
     dangerDirective: options.dangerDirective,
     discardedImage: canonical.discardedImage,
@@ -51,5 +54,6 @@ export function prepareTurnCandidate(options: {
     turnViolations,
     violations,
     canCommitWithoutReplies: canCommitGeneratedTurnWithoutReplies(violations),
+    repairedDangerMetadata: dangerSafe.repaired,
   }
 }

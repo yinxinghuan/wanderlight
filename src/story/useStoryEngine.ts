@@ -12,13 +12,14 @@ import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, repairUns
 import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence, repairPersistedMapRouteHints } from './engine/turnConsistency'
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
-import { buildDangerDirective, normalizeDangerState, repairLegacyDangerMethodChoices } from './engine/dangerDirector'
-import { activeStatFloorRule, domainSuppressesDanger, repairDomainRepeatState, repairEndedSessionChoices, repairLegacyDomainChoiceReset, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
+import { buildDangerDirective, normalizeDangerState, repairLegacyDangerMethodChoices, resolveActiveDangerDeflection } from './engine/dangerDirector'
+import { activeStatFloorRule, applyDomainRecommendationPolicy, domainSuppressesDanger, repairDomainRepeatState, repairEndedSessionChoices, repairLegacyDomainChoiceReset, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
 import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from './engine/authoredTurns'
 import { resolvePresetEventTurn } from './engine/presetEventDirector'
 import { t } from './i18n'
 import { ITEM_IMAGE_STYLE_VERSION, type AdapterProgress, type InventoryItem, type Locale, type StoryArchive, type StoryCartridge, type StoryMode, type StorySave } from './types'
 import { inventoryImagePrompt } from './engine/itemImage'
+import { recordAuthorityShadowSample } from './engine/authorityShadow'
 
 type LegacyStorySave = Omit<StorySave, 'version' | 'locale' | 'characters' | 'partyMemberIds' | 'danger' | 'decisionContext' | 'jobs'> & {
   version?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10
@@ -148,6 +149,17 @@ export function normalizeSave(candidate: LegacyStorySave | null | undefined, car
     }
     normalized.blocks = normalized.blocks.filter((block) => block.id !== `choices-${normalized.scene}`)
   }
+  if (!normalized.sessionEnded && !floor) {
+    const previousLabels = normalized.choices.map((choice) => choice.label)
+    normalized.choices = applyDomainRecommendationPolicy(normalized, cartridge, normalized.choices)
+    if (normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
+    if (normalized.choices.some((choice, index) => choice.label !== previousLabels[index]) || normalized.choices.length !== previousLabels.length) {
+      normalized.blocks = [
+        ...normalized.blocks.filter((block) => block.id !== `choices-${normalized.scene}`),
+        createChoiceRecordBlock(normalized.scene, normalized.choices),
+      ]
+    }
+  }
   if (!normalized.sessionEnded && normalized.choices.length) normalized.choices = bindChoiceDestinations(normalized.choices, normalized, cartridge)
   if (!normalized.sessionEnded && normalized.choices.length && !normalized.blocks.some((block) => block.id === `choices-${normalized.scene}`)) {
     normalized.blocks = [...normalized.blocks, createChoiceRecordBlock(normalized.scene, normalized.choices)]
@@ -173,6 +185,10 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
   const archiveRef = useRef<StoryArchive>({ version: 1, worlds: {} })
   const { generate, resolveTaskUrl } = useGenImage()
   const persist = cloud.persist
+
+  useEffect(() => {
+    recordAuthorityShadowSample(save, cartridge)
+  }, [cartridge, save])
 
   useEffect(() => {
     if (!cloud.loaded || seeded.current) return
@@ -324,13 +340,17 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
         return
       }
       const domainResolution = resolveDomainAction(base, activeCartridge, normalizedAction)
-      const authoredOpeningTurn = domainResolution ? undefined : resolveDeterministicOpeningTurn(base, activeCartridge, normalizedAction)
-      const authoredChoiceTurn = domainResolution || authoredOpeningTurn ? undefined : resolveDeterministicChoiceTurn(base, activeCartridge, normalizedAction)
+      const activeDangerDeflection = domainResolution ? undefined : resolveActiveDangerDeflection(base, activeCartridge, normalizedAction)
+      const authoredOpeningTurn = domainResolution || activeDangerDeflection ? undefined : resolveDeterministicOpeningTurn(base, activeCartridge, normalizedAction)
+      const authoredChoiceTurn = domainResolution || activeDangerDeflection || authoredOpeningTurn
+        ? undefined
+        : resolveDeterministicChoiceTurn(base, activeCartridge, normalizedAction)
       // A deterministic authored turn already owns this calm beat. Scheduling a
       // second event on top of it is what previously made a washhouse repair
       // suddenly sprout unrelated vineyard-road choices.
       const authoredOwnsCalmTurn = base.danger.phase === 'calm' && Boolean(authoredOpeningTurn || authoredChoiceTurn)
-      const scheduledDanger = domainResolution?.status === 'rejected'
+      const scheduledDanger = activeDangerDeflection
+        || domainResolution?.status === 'rejected'
         || domainSuppressesDanger(domainResolution)
         || authoredOwnsCalmTurn
         ? undefined
@@ -338,7 +358,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
       const presetEventResolution = domainResolution || authoredOpeningTurn || authoredChoiceTurn || scheduledDanger
         ? undefined
         : resolvePresetEventTurn(base, activeCartridge, normalizedAction)
-      const authoredTurn = authoredOpeningTurn ?? authoredChoiceTurn ?? presetEventResolution?.turn
+      const authoredTurn = activeDangerDeflection ?? authoredOpeningTurn ?? authoredChoiceTurn ?? presetEventResolution?.turn
       const dangerDirective = presetEventResolution ? undefined : scheduledDanger
       let result = domainResolution
         ? { content: domainResolution.status === 'accepted' ? domainResolution.successText : domainResolution.reasons.join(activeCartridge.locale === 'zh' ? '；' : '; ') }
@@ -365,7 +385,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
           if (prepared.canCommitWithoutReplies) {
             commit((current) => applyParsedScene(
               localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
-              result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId, presetEventResolution,
+              result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId, presetEventResolution, Boolean(activeDangerDeflection?.suppressImage),
             ))
             setPendingAction('')
             setProgress(null)
@@ -388,7 +408,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
               || canCommitDisplayedChoiceWithoutGeneratedReplies(base, activeCartridge, normalizedAction, remaining)) {
               commit((current) => applyParsedScene(
                 localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
-                result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId, presetEventResolution,
+                result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId, presetEventResolution, Boolean(activeDangerDeflection?.suppressImage),
               ))
               setPendingAction('')
               setProgress(null)
@@ -409,7 +429,7 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
           }
         }
       }
-      commit((current) => applyParsedScene(localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction, result.imagePrompt, result.imageSubject, dangerDirective, domainResolution, result.imageCharacterId, presetEventResolution))
+      commit((current) => applyParsedScene(localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction, result.imagePrompt, result.imageSubject, dangerDirective, domainResolution, result.imageCharacterId, presetEventResolution, Boolean(activeDangerDeflection?.suppressImage)))
       setPendingAction('')
       setProgress(null)
     } catch (cause) {

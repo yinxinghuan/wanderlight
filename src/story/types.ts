@@ -159,6 +159,11 @@ export type DomainEffect =
 export interface DomainActionRule {
   id: string
   intent: string
+  /** Stable player-facing wording used only by the optional authority recommender. */
+  choiceLabel?: string
+  /** Opt-in; rules remain executable even when they are not recommended. */
+  recommend?: boolean
+  rank?: number
   match: string[]
   matchMode?: 'contains' | 'exact'
   intentGuard?: 'rest-commitment'
@@ -179,10 +184,24 @@ export type DomainDerivedFact =
 export interface DomainObjectiveTransition { from: string; to: string; requirements: DomainRequirement[] }
 export interface StoryDomainRules {
   rules: DomainActionRule[]
+  /** Shadow never changes rendered choices; authority-first may replace them. */
+  authorityMode?: 'off' | 'shadow' | 'authority-first'
+  /** Opt-in maximum authority-owned fallback choices; omitted means use contextual story recovery. */
+  authorityFallbackLimit?: number
   legacyChoiceSets?: string[][]
   derivedItemMetrics?: DomainDerivedItemMetric[]
   derivedFacts?: DomainDerivedFact[]
   objectiveTransitions?: DomainObjectiveTransition[]
+}
+export interface DomainChoiceAuthorityAudit {
+  mode: NonNullable<StoryDomainRules['authorityMode']>
+  authorityChoices: Choice[]
+  narrativeChoices: Array<{
+    label: string
+    status: 'governed-accepted' | 'governed-rejected' | 'open-narrative'
+    ruleId?: string
+    reasons?: string[]
+  }>
 }
 export interface DomainActionResolution {
   status: 'accepted' | 'rejected'
@@ -308,7 +327,7 @@ export interface StoryCartridge {
   demoTurns: DemoTurn[]
 }
 
-export interface DemoTurn { match: string[]; content: string; imagePrompt?: string; imageSubject?: SceneImageSubject; imageCharacterId?: string }
+export interface DemoTurn { match: string[]; content: string; imagePrompt?: string; imageSubject?: SceneImageSubject; imageCharacterId?: string; suppressImage?: boolean }
 export interface DeterministicChoiceTurn {
   action: string
   turn: DemoTurn

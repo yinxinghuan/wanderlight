@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { wanderlight, wanderlightEn } from '../src/story/cartridges/wanderlight'
-import { buildDangerDirective, contextualDangerChoiceLabels, repairLegacyDangerMethodChoices } from '../src/story/engine/dangerDirector'
+import { buildDangerDirective, contextualDangerChoiceLabels, repairLegacyDangerMethodChoices, resolveActiveDangerDeflection } from '../src/story/engine/dangerDirector'
 import { resolveDomainAction } from '../src/story/engine/domainRules'
 import { applyParsedScene, createChoiceRecordBlock, createInitialSave } from '../src/story/engine/reducer'
 import { parseStoryProtocol } from '../src/story/engine/protocol'
@@ -100,6 +100,36 @@ assert.equal(committedScheduledThreat.danger.phase, 'warning')
 assert.equal(committedScheduledThreat.danger.currentThreat, whitecapDirective.threat)
 assert.ok(committedScheduledThreat.choices.every((choice) => choice.label.includes(whitecapDirective.threat)))
 
+const visibleButMalformedScheduledThreat = prepareTurnCandidate({
+  save: whitecapSave,
+  cartridge: wanderlight,
+  action: '检查皮带张力',
+  dangerDirective: whitecapDirective,
+  parsed: parseStoryProtocol(`你检查完传动皮带，门外随即传来${whitecapDirective.threat}的确切消息，眼前的工作因此受到影响。
+[scene_location: location="白浪浴镇·洗衣房"]
+[choices: "继续检查皮带"|"先看看门外"]`, 'zh'),
+})
+assert.equal(visibleButMalformedScheduledThreat.repairedDangerMetadata, true, 'visible scheduled warning may receive deterministic local protocol repair')
+assert.deepEqual(visibleButMalformedScheduledThreat.violations, [], 'local danger metadata repair preserves an otherwise valid player consequence')
+assert.ok(visibleButMalformedScheduledThreat.parsed.commands.some((command) => command.type === 'encounter'
+  && command.phase === whitecapDirective.phase && command.kind === whitecapDirective.threat))
+const repairedDangerChoices = [...visibleButMalformedScheduledThreat.parsed.commands].reverse().find((command) => command.type === 'choices')
+assert.ok(repairedDangerChoices?.type === 'choices' && repairedDangerChoices.choices.every((choice) => choice.includes(whitecapDirective.threat)),
+  'locally repaired replies remain bound to the exact threat')
+
+const resolutionDirective = { ...whitecapDirective, phase: 'resolution' as const, check: { skill: '判断', dc: 12, roll: 6, modifier: 2, total: 8, outcome: 'failure' as const } }
+const unresolvedResolution = prepareTurnCandidate({
+  save: { ...whitecapSave, danger: { ...whitecapSave.danger, phase: 'confrontation' as const, currentThreat: whitecapDirective.threat } },
+  cartridge: wanderlight,
+  action: '立即应对',
+  dangerDirective: resolutionDirective,
+  parsed: parseStoryProtocol(`你仍在处理${whitecapDirective.threat}，结果还不明确。
+[scene_location: location="白浪浴镇·洗衣房"]
+[choices: "继续处理${whitecapDirective.threat}"]`, 'zh'),
+})
+assert.equal(unresolvedResolution.repairedDangerMetadata, false, 'fixed-roll resolution can never be synthesized from incomplete prose')
+assert.ok(unresolvedResolution.violations.includes('turn.scheduled_threat_requires_visible_establishment'))
+
 const dangerBlockedShift = resolveDomainAction(
   { ...whitecapSave, danger: { ...whitecapSave.danger, phase: 'warning' as const, currentThreat: whitecapDirective.threat } },
   wanderlight,
@@ -114,6 +144,29 @@ const warningSave = {
   danger: { ...initial.danger, phase: 'warning' as const, currentThreat: '已建立的本地威胁', safeTurns: 0 },
 }
 assert.equal(buildDangerDirective(warningSave, wanderlight, '继续处理')?.threat, '已建立的本地威胁', 'an active threat remains stable until resolution')
+
+const unrelatedDangerAction = resolveActiveDangerDeflection(warningSave, wanderlight, '请同伴看看另一张地图')
+assert.ok(unrelatedDangerAction, 'unrelated free input is rejected locally before it can erase active danger')
+const unrelatedPrepared = prepareTurnCandidate({
+  save: warningSave,
+  cartridge: wanderlight,
+  action: '请同伴看看另一张地图',
+  parsed: parseStoryProtocol(unrelatedDangerAction!.content, 'zh'),
+  trustedAuthored: true,
+})
+assert.deepEqual(unrelatedPrepared.violations, [])
+const unrelatedCommitted = applyParsedScene(warningSave, unrelatedPrepared.parsed, wanderlight, '请同伴看看另一张地图', undefined, undefined, undefined, undefined, undefined, undefined, true)
+assert.equal(unrelatedCommitted.danger.phase, 'warning')
+assert.equal(unrelatedCommitted.danger.currentThreat, '已建立的本地威胁')
+assert.equal(unrelatedCommitted.location, warningSave.location)
+assert.equal(unrelatedCommitted.objective, warningSave.objective)
+assert.deepEqual(unrelatedCommitted.stats, warningSave.stats)
+assert.ok(unrelatedCommitted.choices.every((choice) => choice.label.includes('已建立的本地威胁')))
+assert.equal(unrelatedCommitted.blocks.filter((block) => block.kind === 'image').length,
+  warningSave.blocks.filter((block) => block.kind === 'image').length,
+  'a locally rejected unrelated danger action must not queue a misleading scene image')
+assert.equal(resolveActiveDangerDeflection(warningSave, wanderlight, '立即应对“已建立的本地威胁”'), undefined,
+  'an action explicitly addressing the active threat still reaches normal adjudication')
 
 const checkpoint = { ...initial, scene: 8, sessionEnded: true, choices: [], danger: { ...initial.danger, safeTurns: 99 } }
 const warning = buildDangerDirective(checkpoint, wanderlight, '继续漫游')!
@@ -143,4 +196,4 @@ assert.deepEqual(JSON.parse(migrated.blocks.find((block) => block.id === 'choice
 assert.equal(migrated.facts['legacy-danger-method-copy-repaired-v1'], true)
 assert.deepEqual(repairLegacyDangerMethodChoices(legacySave, wanderlightEn).choices.map((choice) => choice.label), wanderlightEn.dangerDirector?.methods, '切换语言时也必须把另一种语言的旧文案迁移到当前语言')
 
-console.log(JSON.stringify({ ok: true, scopedThreatRuns, checks: ['location-varied-threat-selection', 'location-scoped-threat-matrix', 'scheduled-threat-visible-establishment', 'scheduled-threat-reducer-defense', 'scheduled-threat-positive-control', 'active-danger-blocks-work', 'active-threat-stability', 'replyless-danger-methods', 'plain-language-methods', 'legacy-method-copy-migration'] }))
+console.log(JSON.stringify({ ok: true, scopedThreatRuns, checks: ['location-varied-threat-selection', 'location-scoped-threat-matrix', 'scheduled-threat-visible-establishment', 'scheduled-threat-reducer-defense', 'scheduled-threat-positive-control', 'visible-danger-metadata-local-repair', 'resolution-not-synthesized', 'active-danger-blocks-work', 'active-danger-unrelated-input-local-rejection', 'active-threat-stability', 'replyless-danger-methods', 'plain-language-methods', 'legacy-method-copy-migration'] }))
