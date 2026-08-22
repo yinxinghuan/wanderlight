@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { chooseStoryAudioCue } from '../src/story/audio/cueDirector'
-import { createAmbientTexture, SYNTH_AMBIENT_PROFILE } from '../src/story/audio/StorySynth'
+import { createAmbientTexture, RECORDED_SOUND_PROFILE, SFX_OUTPUT_PROFILE, SYNTH_AMBIENT_PROFILE } from '../src/story/audio/StorySynth'
 import type { StoryBlock } from '../src/story/types'
 
 function seededRandom(seed = 173): () => number {
@@ -26,18 +26,22 @@ const leftStart = rms(left.slice(0, edge))
 const leftEnd = rms(left.slice(-edge))
 assert.ok(Math.abs(20 * Math.log10(leftStart / leftEnd)) < 4, 'loop edges must remain energy-compatible')
 assert.ok(Math.abs(left[0] - left.at(-1)!) < .08, 'loop boundary must not create a large click')
+assert.equal(RECORDED_SOUND_PROFILE.maxCueVoices, 2)
+assert.ok(SFX_OUTPUT_PROFILE.gainScale <= .52)
+assert.ok(SFX_OUTPUT_PROFILE.minimumCueIntervalSeconds >= .18)
 
 const block = (kind: StoryBlock['kind'], data: StoryBlock['data'] = {}, text = ''): StoryBlock => ({ id: `${kind}-${Math.random()}`, kind, text, data })
 assert.equal(chooseStoryAudioCue([block('change', { stat: 'coin', delta: 6 })]), 'coinGain')
 assert.equal(chooseStoryAudioCue([block('change', { stat: 'coin', delta: -3 })]), 'coinSpend')
-assert.equal(chooseStoryAudioCue([block('change', { stat: 'energy', delta: -7 })]), 'energy')
-assert.equal(chooseStoryAudioCue([block('change', { stat: 'renown', delta: 2 })]), 'standing')
+assert.equal(chooseStoryAudioCue([block('change', { stat: 'energy', delta: -7 })]), null)
+assert.equal(chooseStoryAudioCue([block('change', { stat: 'renown', delta: 2 })]), null)
 assert.equal(chooseStoryAudioCue([block('change', { relationshipChange: 'trusted' })]), 'relationship')
 assert.equal(chooseStoryAudioCue([block('event', { arrival: 'Silverleaf' })]), 'travel')
 assert.equal(chooseStoryAudioCue([block('change', { itemAction: 'add' })]), 'item')
 assert.equal(chooseStoryAudioCue([block('change', { itemAction: 'add', rarity: 'rare' })]), 'treasure')
 assert.equal(chooseStoryAudioCue([block('check', { outcome: 'success' })]), 'success')
 assert.equal(chooseStoryAudioCue([block('check', { outcome: 'failure' })]), 'failure')
+assert.equal(chooseStoryAudioCue([block('event')]), null)
 assert.equal(chooseStoryAudioCue([block('narration')]), null)
 
 console.log('audio synth contract passed')

@@ -29,10 +29,8 @@ export function chooseStoryAudioCue(blocks: StoryBlock[]): StoryAudioCue | null 
 
   const stat = blocks.find((block) => block.kind === 'change' && block.data?.stat)
   if (stat?.data?.stat === 'coin') return number(stat.data.delta) >= 0 ? 'coinGain' : 'coinSpend'
-  if (stat?.data?.stat === 'energy') return 'energy'
-  if (stat?.data?.stat === 'renown') return 'standing'
-  if (stat) return 'change'
-
-  if (blocks.some((block) => block.kind === 'event' && !block.id.startsWith('action-'))) return 'discovery'
+  // Energy/standing changes happen during ordinary play and already receive
+  // visible feedback. Sound only the rarer semantic events above so one turn
+  // does not become a click + result + image notification sequence.
   return null
 }
