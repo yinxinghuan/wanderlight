@@ -1,8 +1,6 @@
-import type { StoryAudioTheme } from '../types'
+import type { StoryAudioCueName, StoryAudioTheme, StoryRecordedTrack } from '../types'
 
-export type StoryAudioCue =
-  | 'open' | 'action' | 'success' | 'failure' | 'change' | 'discovery' | 'treasure' | 'image' | 'summary' | 'error'
-  | 'coinGain' | 'coinSpend' | 'energy' | 'standing' | 'relationship' | 'travel' | 'item'
+export type StoryAudioCue = StoryAudioCueName
 
 type AudioContextConstructor = typeof AudioContext
 type StoppableNode = AudioBufferSourceNode | OscillatorNode
@@ -13,6 +11,20 @@ export const SYNTH_AMBIENT_PROFILE = {
   crossfadeSeconds: 1.4,
   detailDelaySeconds: [7, 17] as const,
 } as const
+
+export const RECORDED_SOUND_PROFILE = {
+  musicRepeatDelayMs: 5_000,
+  ambienceRepeatDelayMs: 7_000,
+  maxCueVoices: 4,
+} as const
+
+export function resolveRecordedAmbience(theme: StoryAudioTheme, locationId?: string): StoryRecordedTrack | undefined {
+  return (locationId ? theme.recorded?.ambienceByLocationId?.[locationId] : undefined) ?? theme.recorded?.ambience
+}
+
+function safeTrackGain(track: StoryRecordedTrack | undefined): number {
+  return clampUnit(track?.gain ?? 0)
+}
 
 function contextConstructor(): AudioContextConstructor | undefined {
   return window.AudioContext ?? (window as Window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext
@@ -76,6 +88,14 @@ export class StorySynth {
   private ambientDetailTimer: number | null = null
   private activeVoices = 0
   private stateListener: ((running: boolean) => void) | null = null
+  private locationId = ''
+  private recordedMusic: HTMLAudioElement | null = null
+  private recordedAmbience: HTMLAudioElement | null = null
+  private recordedMusicTrack: StoryRecordedTrack | undefined
+  private recordedAmbienceTrack: StoryRecordedTrack | undefined
+  private recordedMusicTimer: number | null = null
+  private recordedAmbienceTimer: number | null = null
+  private recordedCueVoices = new Set<HTMLAudioElement>()
 
   get supported(): boolean {
     return Boolean(contextConstructor())
@@ -90,17 +110,22 @@ export class StorySynth {
     listener?.(this.running)
   }
 
-  configure(theme: StoryAudioTheme, tension: number): void {
+  configure(theme: StoryAudioTheme, tension: number, locationId?: string): void {
     const changed = this.theme?.material !== theme.material
+    const locationChanged = this.locationId !== (locationId ?? '')
     this.theme = theme
     this.tension = clampUnit(tension)
+    this.locationId = locationId ?? ''
+    this.syncRecordedMusic(theme.recorded?.music)
+    if (locationChanged || !this.recordedAmbience) this.syncRecordedAmbience(resolveRecordedAmbience(theme, locationId))
     if (changed && this.unlocked) {
       this.stopMusic()
       this.stopAmbient()
-      this.startAmbient()
-      this.startMusic()
+      if (!this.recordedAmbienceTrack) this.startAmbient()
+      if (!this.recordedMusicTrack) this.startMusic()
     }
     this.applyLevels(.16)
+    this.applyRecordedLevels()
   }
 
   async unlock(): Promise<boolean> {
@@ -115,9 +140,12 @@ export class StorySynth {
       this.primeOutput()
       this.unlocked = true
       this.stateListener?.(true)
-      if (!this.ambientNodes.length) this.startAmbient()
-      if (this.musicTimer === null) this.startMusic()
+      if (this.recordedAmbienceTrack) this.playRecordedBed('ambient')
+      else if (!this.ambientNodes.length) this.startAmbient()
+      if (this.recordedMusicTrack) this.playRecordedBed('music')
+      else if (this.musicTimer === null) this.startMusic()
       this.applyLevels(.08)
+      this.applyRecordedLevels()
       return true
     } catch {
       return false
@@ -125,8 +153,13 @@ export class StorySynth {
   }
 
   setMuted(muted: boolean): void {
+    const changed = this.muted !== muted
     this.muted = muted
     this.applyLevels(.12)
+    this.applyRecordedLevels()
+    if (!changed) return
+    if (muted) this.pauseRecordedBeds()
+    else if (this.unlocked && this.context?.state === 'running') this.resumeRecordedBeds()
   }
 
   async setPageVisible(visible: boolean): Promise<void> {
@@ -135,6 +168,8 @@ export class StorySynth {
       if (!visible && this.context.state === 'running') await this.context.suspend()
       const state = String(this.context.state)
       if (visible && !this.muted && state !== 'running' && state !== 'closed') await this.context.resume()
+      if (!visible) this.pauseRecordedBeds()
+      else if (!this.muted) this.resumeRecordedBeds()
     } catch {
       // Audio is optional and must never affect the story.
     }
@@ -144,6 +179,13 @@ export class StorySynth {
     const context = this.context
     const theme = this.theme
     if (!context || !theme || this.muted || context.state !== 'running') return
+    if (this.playRecordedCue(cue)) return
+    this.playSynthCue(cue)
+  }
+
+  private playSynthCue(cue: StoryAudioCue): void {
+    const theme = this.theme
+    if (!theme) return
     const softer = theme.material === 'apartment'
     const woody = theme.material === 'wayfarer'
     if (cue === 'open') {
@@ -224,6 +266,7 @@ export class StorySynth {
   dispose(): void {
     this.stopMusic()
     this.stopAmbient()
+    this.stopRecordedAudio()
     const context = this.context
     this.context = null
     this.master = null
@@ -232,6 +275,121 @@ export class StorySynth {
     this.sfx = null
     this.unlocked = false
     if (context) void context.close().catch(() => undefined)
+  }
+
+  private createRecordedElement(track: StoryRecordedTrack): HTMLAudioElement | null {
+    if (typeof Audio === 'undefined') return null
+    const element = new Audio(track.src)
+    element.preload = 'auto'
+    return element
+  }
+
+  private syncRecordedMusic(track: StoryRecordedTrack | undefined): void {
+    if (this.recordedMusicTrack?.src === track?.src) {
+      this.recordedMusicTrack = track
+      return
+    }
+    this.clearRecordedTimer('music')
+    this.recordedMusic?.pause()
+    this.recordedMusic = track ? this.createRecordedElement(track) : null
+    this.recordedMusicTrack = track
+    if (this.recordedMusic) this.recordedMusic.onended = () => this.scheduleRecordedReplay('music')
+    if (this.unlocked && track && !this.muted) this.playRecordedBed('music')
+    else if (this.unlocked && !track) this.startMusic()
+  }
+
+  private syncRecordedAmbience(track: StoryRecordedTrack | undefined): void {
+    if (this.recordedAmbienceTrack?.src === track?.src) {
+      this.recordedAmbienceTrack = track
+      return
+    }
+    this.clearRecordedTimer('ambient')
+    this.recordedAmbience?.pause()
+    this.recordedAmbience = track ? this.createRecordedElement(track) : null
+    this.recordedAmbienceTrack = track
+    if (this.recordedAmbience) this.recordedAmbience.onended = () => this.scheduleRecordedReplay('ambient')
+    if (this.unlocked && track && !this.muted) this.playRecordedBed('ambient')
+    else if (this.unlocked && !track) this.startAmbient()
+  }
+
+  private playRecordedBed(kind: 'music' | 'ambient'): void {
+    const element = kind === 'music' ? this.recordedMusic : this.recordedAmbience
+    const track = kind === 'music' ? this.recordedMusicTrack : this.recordedAmbienceTrack
+    if (!element || !track || this.muted || document.hidden) return
+    this.clearRecordedTimer(kind)
+    this.applyRecordedLevels()
+    void element.play()
+      .then(() => {
+        // A previous network/autoplay failure may already have started the
+        // synthesized fallback. Keep only one bed once the recorded asset works.
+        if (kind === 'music') this.stopMusic()
+        else this.stopAmbient()
+      })
+      .catch(() => {
+        if (kind === 'music' && this.musicTimer === null) this.startMusic()
+        if (kind === 'ambient' && !this.ambientNodes.length) this.startAmbient()
+      })
+  }
+
+  private scheduleRecordedReplay(kind: 'music' | 'ambient'): void {
+    if (this.muted || document.hidden) return
+    this.clearRecordedTimer(kind)
+    const delay = kind === 'music' ? RECORDED_SOUND_PROFILE.musicRepeatDelayMs : RECORDED_SOUND_PROFILE.ambienceRepeatDelayMs
+    const timer = window.setTimeout(() => {
+      const element = kind === 'music' ? this.recordedMusic : this.recordedAmbience
+      if (element) element.currentTime = 0
+      this.playRecordedBed(kind)
+    }, delay)
+    if (kind === 'music') this.recordedMusicTimer = timer
+    else this.recordedAmbienceTimer = timer
+  }
+
+  private clearRecordedTimer(kind: 'music' | 'ambient'): void {
+    const timer = kind === 'music' ? this.recordedMusicTimer : this.recordedAmbienceTimer
+    if (timer !== null) window.clearTimeout(timer)
+    if (kind === 'music') this.recordedMusicTimer = null
+    else this.recordedAmbienceTimer = null
+  }
+
+  private pauseRecordedBeds(): void {
+    this.clearRecordedTimer('music')
+    this.clearRecordedTimer('ambient')
+    this.recordedMusic?.pause()
+    this.recordedAmbience?.pause()
+  }
+
+  private resumeRecordedBeds(): void {
+    if (this.recordedMusicTrack) this.playRecordedBed('music')
+    if (this.recordedAmbienceTrack) this.playRecordedBed('ambient')
+  }
+
+  private applyRecordedLevels(): void {
+    const master = this.muted ? 0 : clampUnit(this.theme?.levels.master ?? 0)
+    if (this.recordedMusic) this.recordedMusic.volume = master * safeTrackGain(this.recordedMusicTrack)
+    if (this.recordedAmbience) this.recordedAmbience.volume = master * safeTrackGain(this.recordedAmbienceTrack)
+  }
+
+  private playRecordedCue(cue: StoryAudioCue): boolean {
+    const track = this.theme?.recorded?.cues?.[cue]
+    if (!track || typeof Audio === 'undefined' || this.recordedCueVoices.size >= RECORDED_SOUND_PROFILE.maxCueVoices) return false
+    const element = this.createRecordedElement(track)
+    if (!element) return false
+    element.volume = clampUnit(this.theme?.levels.master ?? 0) * safeTrackGain(track)
+    this.recordedCueVoices.add(element)
+    const cleanup = () => { element.pause(); this.recordedCueVoices.delete(element) }
+    element.onended = cleanup
+    void element.play().catch(() => { cleanup(); this.playSynthCue(cue) })
+    return true
+  }
+
+  private stopRecordedAudio(): void {
+    this.pauseRecordedBeds()
+    this.recordedMusic = null
+    this.recordedAmbience = null
+    this.recordedMusicTrack = undefined
+    this.recordedAmbienceTrack = undefined
+    this.recordedCueVoices.forEach((element) => element.pause())
+    this.recordedCueVoices.clear()
   }
 
   private createGraph(): void {
