@@ -65,7 +65,7 @@ for (const locale of ['zh', 'en'] as const) {
 [scene_location: location="${location}"]
 [encounter: phase="confrontation" kind="${threat}" severity="3" outcome="active"]
 [choices: "${objective}"|"${concrete}"]`
-      : `The prisoner's allies are still trying to break in, and cargo sits beside the weak latch.
+      : `The prisoner's allies are still trying to break in, and cargo sits beside the weak warehouse door.
 [scene_location: location="${location}"]
 [encounter: phase="confrontation" kind="${threat}" severity="3" outcome="active"]
 [choices: "${objective}"|"${concrete}"]`, locale),

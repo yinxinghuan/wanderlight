@@ -4,6 +4,14 @@ function normalized(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 }
 
+export function hasDeterministicChoiceAction(
+  cartridge: Pick<StoryCartridge, 'deterministicChoiceTurns'>,
+  action: string,
+): boolean {
+  const actionKey = normalized(action)
+  return Boolean(actionKey) && Boolean(cartridge.deterministicChoiceTurns?.some((candidate) => normalized(candidate.action) === actionKey))
+}
+
 export function resolveDeterministicOpeningTurn(
   save: Pick<StorySave, 'scene' | 'choices' | 'location'>,
   cartridge: StoryCartridge,
@@ -33,4 +41,12 @@ export function resolveDeterministicChoiceTurn(
     return true
   })
   return rule?.turn
+}
+
+export function deterministicChoiceActionAvailable(
+  save: Pick<StorySave, 'choices' | 'location' | 'characters' | 'jobs'>,
+  cartridge: StoryCartridge,
+  action: string,
+): boolean {
+  return Boolean(resolveDeterministicChoiceTurn(save, cartridge, action, { requireVisibleChoice: false }))
 }

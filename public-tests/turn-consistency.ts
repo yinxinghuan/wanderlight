@@ -66,47 +66,21 @@ equal(unboundImage.imagePrompt, undefined, 'an image proposal without image_loca
 ok(unboundImage.discardedImage, 'discarded image metadata is reported to the caller')
 equal(validateTurnConsistency(initial, unboundImage.parsed, cartridge, unboundImage.imagePrompt).length, 0, 'discarding an unbound image does not reject the story turn')
 
-const playableRecovery = applyConsistencyRecovery(initial, cartridge, '尝试一个未通过一致性校验的行动')
+const failedRecommendation = initial.choices[0].label
+const playableRecovery = applyConsistencyRecovery(initial, cartridge, failedRecommendation)
 equal(playableRecovery.scene, initial.scene + 1, 'a rejected generated turn becomes one local playable recovery turn')
 equal(playableRecovery.location, initial.location, 'consistency recovery cannot change authoritative location')
 equal(playableRecovery.stats.coin, initial.stats.coin, 'consistency recovery cannot change authoritative stats')
-equal(playableRecovery.choices.length, 2, 'consistency recovery installs only deterministic local exits')
-ok(!playableRecovery.choices.some((choice) => choice.label === '尝试一个未通过一致性校验的行动'), 'a failed generated action is quarantined instead of re-offered')
+equal(playableRecovery.choices.length, initial.choices.length - 1, 'consistency recovery preserves only trustworthy sibling recommendations')
+ok(!playableRecovery.choices.some((choice) => choice.label === failedRecommendation), 'a failed generated action is quarantined instead of re-offered')
 ok(playableRecovery.blocks.some((block) => block.id === `consistency-recovery-${playableRecovery.scene}` && block.text.includes(initial.location)), 'consistency recovery explains the safe pause at the current location')
 ok(!playableRecovery.choices.some((choice) => choice.label.includes(initial.objective)), 'consistency recovery cannot route through a stale objective')
 ok(!playableRecovery.blocks.some((block) => /一致性检查|未写入存档|请重试/.test(block.text)), 'technical validation errors are not exposed to players')
 
-const confirmAction = playableRecovery.choices[0].label
-const confirmSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, confirmAction)
-equal(confirmSelection?.mode, 'confirm', 'the confirmation branch is recognized as a local recovery exit')
-const confirmed = applyConsistencyRecoverySelection(playableRecovery, cartridge, confirmAction, confirmSelection!)
-ok(!confirmed.choices.some((choice) => choice.label === '尝试一个未通过一致性校验的行动'), 'confirmation does not promote the failed action again')
-equal(new Set(confirmed.choices.map((choice) => choice.label)).size, confirmed.choices.length, 'confirmation exits with unique choices')
-ok(confirmed.blocks.some((block) => block.data?.consistencyRecoveryExit === 'confirm'), 'confirmation commits a local explanatory turn')
-ok(!confirmed.blocks.some((block) => block.id === `consistency-recovery-${confirmed.scene}`), 'confirmation does not call the model or create another recovery loop')
-const recoveryWithParty = {
-  ...playableRecovery,
-  objective: '确认今晚的工作路线',
-  characters: [...playableRecovery.characters, {
-    id: 'qa-companion', name: '测试同伴', role: '向导', vitality: 80, stress: 0, skills: [],
-    status: 'companion' as const, origin: 'generated' as const, updatedAtScene: playableRecovery.scene, joinedAtScene: playableRecovery.scene,
-  }],
-  partyMemberIds: [...playableRecovery.partyMemberIds, 'qa-companion'],
-}
-const confirmedWithParty = applyConsistencyRecoverySelection(recoveryWithParty, cartridge, confirmAction, confirmSelection!)
-equal(confirmedWithParty.choices.length, 1, 'a live objective excludes generic observation and discussion exits')
-equal(confirmedWithParty.choices[0]?.label, '确认今晚的工作路线', 'the unresolved objective itself remains the executable exit')
-
-const pauseAction = playableRecovery.choices[1].label
-const pauseSelection = resolveConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction)
-equal(pauseSelection?.mode, 'pause', 'the pause branch is recognized as a local recovery exit')
-const paused = applyConsistencyRecoverySelection(playableRecovery, cartridge, pauseAction, pauseSelection!)
-equal(new Set(paused.choices.map((choice) => choice.label)).size, paused.choices.length, 'pause exits with unique choices')
-ok(!paused.choices.some((choice) => /确认与这一步|暂缓这一步|查看.+现在能做的事|放弃原计划/.test(choice.label)), 'pause leaves the synthetic recovery menu behind')
-
-const nestedRecovery = applyConsistencyRecovery(playableRecovery, cartridge, confirmAction)
-ok(!nestedRecovery.choices.some((choice) => choice.label === '尝试一个未通过一致性校验的行动'), 'a repeated consistency failure still cannot re-offer the failed action')
-equal(new Set(nestedRecovery.choices.map((choice) => choice.label)).size, 2, 'a nested recovery keeps two unique local exits')
+const secondFailedRecommendation = playableRecovery.choices[0].label
+const nestedRecovery = applyConsistencyRecovery(playableRecovery, cartridge, secondFailedRecommendation)
+ok(!nestedRecovery.choices.some((choice) => choice.label === failedRecommendation || choice.label === secondFailedRecommendation), 'a repeated consistency failure cannot re-offer either failed action')
+equal(nestedRecovery.choices.length, playableRecovery.choices.length - 1, 'a repeated failure strictly shrinks the recommendation set')
 
 const legacyRecoveryAction = '前往杯影夜市观察夏琳和她的手下'
 const legacyRecoveryChoices = [
@@ -133,10 +107,10 @@ const legacyRecovery = {
 const repairedRecovery = repairLegacyConsistencyRecovery(legacyRecovery, cartridge)
 ok(!repairedRecovery.choices.some((choice) => choice.label === legacyRecoveryAction), 'a saved legacy recovery removes the previously failed route from quick replies')
 ok(repairedRecovery.blocks.find((block) => block.id === 'consistency-recovery-6')?.text.includes(initial.location), 'a saved legacy recovery gains a current-location explanation without promoting the failed action')
-equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-6')?.text ?? '')[0], repairedRecovery.choices[0].label, 'saved article and tray choices migrate together')
-ok(!decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-5')?.text ?? '').includes('询问男子关于短发女人的更多细节'), 'earlier visible recovery records also remove the failed route')
+equal(decodeChoiceRecord(repairedRecovery.blocks.find((block) => block.id === 'choices-6')?.text ?? '').length, repairedRecovery.choices.length, 'saved article and tray choices migrate together even when free input is the only escape')
+equal(repairedRecovery.choices.length, 0, 'legacy recovery with no trustworthy pre-failure siblings leaves the quick tray empty')
 equal(repairedRecovery.objective, legacyRecoveryAction, 'an objective polluted by the old action fallback is realigned to the latest intent')
-equal(repairLegacyConsistencyRecovery(repairedRecovery, cartridge).choices[0]?.label, repairedRecovery.choices[0]?.label, 'legacy recovery migration is idempotent')
+equal(repairLegacyConsistencyRecovery(repairedRecovery, cartridge).choices.length, repairedRecovery.choices.length, 'legacy recovery migration is idempotent')
 
 const screenshotOriginalAction = '留在码头接受搬运工作'
 const screenshotConfirmAction = '先在灯湾码头确认与这一步有关的路线和线索'
@@ -157,9 +131,7 @@ const screenshotLoop = {
 }
 const repairedScreenshotLoop = repairLegacyConsistencyRecovery(screenshotLoop, cartridge)
 ok(!repairedScreenshotLoop.choices.some((choice) => choice.label === screenshotOriginalAction || choice.label === screenshotConfirmAction), 'the shipped duplicate recovery save removes both looping actions')
-equal(new Set(repairedScreenshotLoop.choices.map((choice) => choice.label)).size, 2, 'the shipped duplicate recovery save receives two unique local exits')
-const migratedConfirm = resolveConsistencyRecoverySelection(repairedScreenshotLoop, cartridge, repairedScreenshotLoop.choices[0].label)
-equal(migratedConfirm?.originalAction, screenshotOriginalAction, 'the migrated local exit still remembers the original action')
+equal(repairedScreenshotLoop.choices.length, 0, 'the shipped duplicate recovery save uses free input instead of manufacturing another local menu')
 
 const valid = parseStoryProtocol(`你先回到月线车厢。列车停稳后，你在雾杉林下车，护林人林薇请你参加今晚的巡逻任务。
 [map_update: new_location="雾杉林" connected_to="月线车厢" detail="夜间巡逻开始前的林灯栈道"]

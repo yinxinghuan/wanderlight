@@ -1,6 +1,6 @@
 {
   "name": "wanderlight",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "npm run test:security && npm run test:choices && npm run test:payment && npm run test:turn && npm run test:dynamic-locations && npm run test:pipeline && npm run test:deterministic-choices && npm run test:domain && npm run test:authority-shadow && npm run test:domain-continuity && npm run test:recovery-choice-priority && npm run test:active-thread && npm run test:extended-continuity && npm run test:choice-quality && npm run test:multiturn && npm run test:world-expansion && npm run test:preset-events && npm run test:image-director && npm run test:resume && npm run test:audio && npm run test:stat-floor && npm run test:rest-recovery && npm run test:generated-characters && npm run test:danger",
+    "test": "npm run test:security && npm run test:choices && npm run test:payment && npm run test:turn && npm run test:dynamic-locations && npm run test:pipeline && npm run test:deterministic-choices && npm run test:domain && npm run test:authority-shadow && npm run test:domain-continuity && npm run test:recovery-choice-priority && npm run test:active-thread && npm run test:extended-continuity && npm run test:choice-quality && npm run test:multiturn && npm run test:world-expansion && npm run test:preset-events && npm run test:image-director && npm run test:resume && npm run test:audio && npm run test:stat-floor && npm run test:rest-recovery && npm run test:generated-characters && npm run test:danger && npm run test:danger-loop && npm run test:loop-escape",
     "test:security": "node --import tsx public-tests/protocol-security.ts",
     "test:choices": "node --import tsx public-tests/choice-contract.ts",
     "test:payment": "node --import tsx public-tests/payment-consistency.ts",
@@ -34,7 +34,9 @@
     "test:stat-floor": "node --import tsx public-tests/stat-floor.ts",
     "test:rest-recovery": "node --import tsx public-tests/rest-recovery.ts",
     "test:generated-characters": "node --import tsx public-tests/generated-character-persistence.ts",
-    "test:danger": "node --import tsx public-tests/danger-director.ts"
+    "test:danger": "node --import tsx public-tests/danger-director.ts",
+    "test:danger-loop": "node --import tsx public-tests/danger-loop.ts",
+    "test:loop-escape": "node --import tsx public-tests/loop-escape.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

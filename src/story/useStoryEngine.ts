@@ -6,13 +6,13 @@ import { aigramAdapter } from './adapters/aigram'
 import { mockAdapter } from './adapters/mock'
 import { remoteAdapter } from './adapters/remote'
 import { resolveCartridge } from './cartridges'
-import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, mergeAuthoredMapNodes, normalizeCharacterState, repairLegacyConsistencyRecovery, repairLegacyObjectiveRecoveryChoices, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
+import { applyConsistencyRecovery, applyConsistencyRecoverySelection, applyDisplayedRouteFallback, applyParsedScene, createChoiceRecordBlock, createImageBlock, createInitialSave, createRecoveryChoices, localizeKnownState, mergeAuthoredMapNodes, normalizeCharacterState, repairLegacyConsistencyRecovery, repairLegacyObjectiveRecoveryChoices, resolveConsistencyRecoverySelection, restoreDeterministicRecoveryChoice, shouldRestoreGenericChoices, updateCharacterVisualIdentity, updateImageBlock, updateInventoryItemImage } from './engine/reducer'
 import { isStoryProtocolResidue, parseStoryProtocol } from './engine/protocol'
 import { repairKnownPaymentGap, repairKnownUnauthorizedLodgingPayment, repairUnsettledContractPayment } from './engine/paymentConsistency'
 import { bindChoiceDestinations, canCommitDisplayedChoiceWithoutGeneratedReplies, inferActionDestination, repairKnownForestSceneDivergence, repairPersistedMapRouteHints } from './engine/turnConsistency'
 import { prepareTurnCandidate } from './engine/turnPipeline'
 import { shouldUsePlayerImageReference, upgradePendingSceneImagePrompts } from './engine/imageDirector'
-import { buildDangerDirective, normalizeDangerState, repairLegacyDangerMethodChoices, resolveActiveDangerDeflection } from './engine/dangerDirector'
+import { buildDangerDirective, createDangerFallbackScene, normalizeDangerState, repairLegacyDangerLoopChoices, repairLegacyDangerMethodChoices, resolveActiveDangerDeflection } from './engine/dangerDirector'
 import { activeStatFloorRule, applyDomainRecommendationPolicy, domainSuppressesDanger, repairDomainRepeatState, repairEndedSessionChoices, repairLegacyDomainChoiceReset, resolveDomainAction, statFloorChoices, syncDomainDerivedState } from './engine/domainRules'
 import { resolveDeterministicChoiceTurn, resolveDeterministicOpeningTurn } from './engine/authoredTurns'
 import { resolvePresetEventTurn } from './engine/presetEventDirector'
@@ -91,12 +91,16 @@ function recoverPersistedChoices(candidate: LegacyStorySave, cartridge: StoryCar
 export function normalizeSave(candidate: LegacyStorySave | null | undefined, cartridge: StoryCartridge, incomingChatId?: string): StorySave {
   if (!candidate || candidate.cartridgeId !== cartridge.id || !Array.isArray(candidate.blocks)) return createInitialSave(cartridge, incomingChatId)
   if (incomingChatId && candidate.remoteChatId && candidate.remoteChatId !== incomingChatId) return createInitialSave(cartridge, incomingChatId)
-  const repaired = repairLegacyConsistencyRecovery(repairKnownForestSceneDivergence(
+  const consistencyRepaired = repairLegacyConsistencyRecovery(repairKnownForestSceneDivergence(
     repairKnownUnauthorizedLodgingPayment(repairUnsettledContractPayment(
       repairKnownPaymentGap(recoverPersistedChoices(repairMockLoop(candidate, cartridge), cartridge), cartridge), cartridge,
     ), cartridge),
     cartridge,
   ), cartridge)
+  const repaired = repairLegacyDangerLoopChoices({
+    ...consistencyRepaired,
+    danger: normalizeDangerState(consistencyRepaired.danger),
+  }, cartridge)
   let blocks = repaired.blocks.filter((block) => !(block.kind === 'narration' && isStoryProtocolResidue(block.text)))
   if (!blocks.some((block) => block.kind === 'image')) {
     const legacyPrompt = repaired.imagePrompt?.trim() ?? ''
@@ -139,7 +143,7 @@ export function normalizeSave(candidate: LegacyStorySave | null | undefined, car
   normalized = repairLegacyDangerMethodChoices(normalized, cartridge)
   normalized = restoreDeterministicRecoveryChoice(normalized, cartridge)
   normalized = repairLegacyObjectiveRecoveryChoices(normalized, cartridge)
-  if (!normalized.sessionEnded && normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
+  if (shouldRestoreGenericChoices(normalized)) normalized.choices = createRecoveryChoices(normalized, cartridge)
   const floor = activeStatFloorRule(normalized, cartridge)
   if (!normalized.sessionEnded && floor) {
     normalized.choices = statFloorChoices(normalized, cartridge) ?? normalized.choices
@@ -152,7 +156,7 @@ export function normalizeSave(candidate: LegacyStorySave | null | undefined, car
   if (!normalized.sessionEnded && !floor) {
     const previousLabels = normalized.choices.map((choice) => choice.label)
     normalized.choices = applyDomainRecommendationPolicy(normalized, cartridge, normalized.choices)
-    if (normalized.choices.length === 0) normalized.choices = createRecoveryChoices(normalized, cartridge)
+    if (shouldRestoreGenericChoices(normalized)) normalized.choices = createRecoveryChoices(normalized, cartridge)
     if (normalized.choices.some((choice, index) => choice.label !== previousLabels[index]) || normalized.choices.length !== previousLabels.length) {
       normalized.blocks = [
         ...normalized.blocks.filter((block) => block.id !== `choices-${normalized.scene}`),
@@ -370,7 +374,11 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
               imageCharacterId: authoredTurn.imageCharacterId,
             }
         : await adapter.send(normalizedAction, { cartridge: activeCartridge, save: base, actionId: normalizedAction, locale: actionLocale, dangerDirective }, setProgress)
-      let parsed = parseStoryProtocol(result.content, actionLocale)
+      let parsed = domainResolution?.status === 'accepted'
+        && domainResolution.dangerPolicy === 'advance'
+        && dangerDirective
+        ? createDangerFallbackScene(base, activeCartridge, dangerDirective)
+        : parseStoryProtocol(result.content, actionLocale)
       if (!domainResolution) {
         let prepared = prepareTurnCandidate({
           save: base, parsed, cartridge: activeCartridge, action: normalizedAction,
@@ -409,6 +417,20 @@ export function useStoryEngine(cartridge: StoryCartridge, initialMode: StoryMode
               commit((current) => applyParsedScene(
                 localizeKnownState(current, cartridge, activeCartridge), parsed, activeCartridge, normalizedAction,
                 result.imagePrompt, result.imageSubject, dangerDirective, undefined, result.imageCharacterId, presetEventResolution, Boolean(activeDangerDeflection?.suppressImage),
+              ))
+              setPendingAction('')
+              setProgress(null)
+              return
+            }
+            if (dangerDirective) {
+              commit((current) => applyParsedScene(
+                localizeKnownState(current, cartridge, activeCartridge),
+                createDangerFallbackScene(base, activeCartridge, dangerDirective),
+                activeCartridge,
+                normalizedAction,
+                undefined,
+                undefined,
+                dangerDirective,
               ))
               setPendingAction('')
               setProgress(null)

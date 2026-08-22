@@ -25,7 +25,7 @@ const established = prepareTurnCandidate({
   parsed: parseStoryProtocol(`你把刚抓到的俘虏带回仓房审问，媛夕留在你身边。突然，他的同伴从码头另一侧冲来，试图闯进仓房把俘虏救走。
 [scene_location: location="灯湾码头"]
 [encounter: phase="confrontation" kind="俘虏的同伴赶来营救" severity="3" outcome="active"]
-[choices: "审问刚抓到的俘虏"]`, 'zh'),
+[choices: "守住仓房"]`, 'zh'),
 })
 assert.deepEqual(established.violations, [], '带 encounter 的营救冲突应当可以提交')
 let save = applyParsedScene(initial, established.parsed, wanderlight, '把俘虏带回来审问')
@@ -51,7 +51,7 @@ const resolved = prepareTurnCandidate({
   parsed: parseStoryProtocol(`你和媛夕当场商量后用木箱堵住仓门。俘虏的同伴无法突破，只得撤退到码头外侧；营救行动已经被阻止，俘虏仍在你们看守下。
 [scene_location: location="灯湾码头"]
 [encounter: phase="resolution" kind="俘虏的同伴赶来营救" severity="3" outcome="success"]
-[choices: "审问刚抓到的俘虏"]`, 'zh'),
+[choices: "检查木箱堵住的仓门"]`, 'zh'),
 })
 assert.deepEqual(resolved.violations, [], '明确交代威胁去向后才能结束活动线程')
 save = applyParsedScene(save, resolved.parsed, wanderlight, '和同行者商量下一步', undefined, undefined, directive)

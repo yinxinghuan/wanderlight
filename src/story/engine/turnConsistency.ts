@@ -3,6 +3,7 @@ import { filterGroundedChoices } from './continuity'
 import { resolveDomainAction } from './domainRules'
 import { validateCharacterContinuity } from './characterContinuity'
 import { dangerDirectiveEstablished, dangerTextGrounded } from './dangerDirector'
+import { deterministicChoiceActionAvailable, hasDeterministicChoiceAction } from './authoredTurns'
 import type { Choice, DangerDirective, MapNode, ParsedCommand, ParsedScene, StoryCartridge, StorySave } from '../types'
 
 function clean(value: string): string {
@@ -371,13 +372,24 @@ export function canonicalizeTurnMetadata(
         blocks: [...save.blocks, ...parsed.blocks],
       }
       const textGrounded = new Set(filterGroundedChoices(candidates, candidateSave, cartridge, parsed.blocks).map((choice) => choice.label))
+      const trackableProgress = commands.some((entry) => (
+        entry.type === 'widget' || entry.type === 'skill_check' || entry.type === 'state' || entry.type === 'clock'
+        || entry.type === 'map_update' || entry.type === 'inventory' || entry.type === 'job'
+        || entry.type === 'reputation' || entry.type === 'character_update' || entry.type === 'party_change'
+        || entry.type === 'encounter' || entry.type === 'session_end'
+      ))
+      const scopedCandidates = candidates.filter((choice) => {
+        if (!trustedAuthored && hasDeterministicChoiceAction(cartridge, choice.label)
+          && !deterministicChoiceActionAvailable(candidateSave, cartridge, choice.label)) return false
+        return trustedAuthored || trackableProgress || !semanticallyRepeatsCurrentAction(choice.label, action, cartridge.locale)
+      })
       // Local authored turns are reviewed source content, not model output.
       // Keep their concrete non-generic choices after basic stale/repeat checks;
       // the mechanical noun heuristic is intentionally conservative and can
       // reject valid authored relations such as “box base” after “wooden box”.
       let grounded = trustedAuthored
-        ? candidates
-        : candidates.filter((choice) => {
+        ? scopedCandidates
+        : scopedCandidates.filter((choice) => {
             const domain = resolveDomainAction(candidateSave, cartridge, choice.label)
             return domain ? domain.status === 'accepted' : Boolean(inferActionDestination(candidateSave, cartridge, choice.label)) || textGrounded.has(choice.label)
           })
@@ -438,6 +450,34 @@ export function repeatsCurrentAction(label: string, action: string | undefined, 
   const candidate = withoutRetryPrefix(label, locale)
   const current = withoutRetryPrefix(action, locale)
   return Boolean(candidate && current && candidate === current)
+}
+
+function semanticActionCore(value: string, locale: StoryCartridge['locale']): string {
+  if (locale === 'zh') return clean(value)
+    .replace(/(?:仔细|继续|进一步|再次|重新|仍然|接着|先|立即|尝试|沿着|沿|围绕)/gu, '')
+    .replace(/(?:查看|检查|观察|触摸|核对|比对|确认|调查|追查|寻找|研究|看看)/gu, '')
+  const stop = new Set(['a', 'an', 'the', 'again', 'carefully', 'continue', 'further', 'keep', 'more', 'once', 'recheck', 'check', 'compare', 'confirm', 'examine', 'follow', 'inspect', 'investigate', 'look', 'review', 'study', 'touch'])
+  return value.toLocaleLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean).filter((word) => !stop.has(word)).join('')
+}
+
+function bigramOverlap(left: string, right: string): number {
+  const grams = (value: string) => new Set(Array.from({ length: Math.max(0, value.length - 1) }, (_, index) => value.slice(index, index + 2)))
+  const a = grams(left)
+  const b = grams(right)
+  if (!a.size || !b.size) return 0
+  let shared = 0
+  a.forEach((gram) => { if (b.has(gram)) shared += 1 })
+  return shared / Math.min(a.size, b.size)
+}
+
+export function semanticallyRepeatsCurrentAction(label: string, action: string | undefined, locale: StoryCartridge['locale']): boolean {
+  if (!action?.trim()) return false
+  if (repeatsCurrentAction(label, action, locale)) return true
+  const candidate = semanticActionCore(label, locale)
+  const current = semanticActionCore(action, locale)
+  if (candidate.length < 4 || current.length < 4) return false
+  if (candidate.includes(current) || current.includes(candidate)) return true
+  return bigramOverlap(candidate, current) >= .67
 }
 
 export function repeatsCurrentObjective(label: string, objective: string | undefined, locale: StoryCartridge['locale']): boolean {

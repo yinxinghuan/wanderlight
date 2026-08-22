@@ -54,12 +54,12 @@ function runThreatJourney(cartridge: StoryCartridge) {
 
   const directive = buildDangerDirective(save, cartridge, zh ? '守住仓门并要求撤退' : 'Hold the door and demand a withdrawal')
   const resolution = prepare(save, cartridge, zh ? '守住仓门并要求撤退' : 'Hold the door and demand a withdrawal', zh
-    ? `你守住仓门并发出警告。俘虏的同伴无法突破，只得从码头撤退；营救已经被阻止，俘虏仍在看守下。\n[scene_location: location="${location}"]\n[encounter: phase="resolution" kind="${kind}" severity="3" outcome="success"]\n[choices: "继续审问仓房里的俘虏"]`
-    : `You hold the warehouse door and issue a warning. The prisoner's allies are repelled and withdraw from the quay; the rescue is stopped, and the prisoner remains under guard.\n[scene_location: location="${location}"]\n[encounter: phase="resolution" kind="${kind}" severity="3" outcome="success"]\n[choices: "Continue questioning the prisoner in the warehouse"]`)
+    ? `你守住仓门并发出警告。俘虏的同伴无法突破，只得从码头撤退；营救已经被阻止，俘虏仍在看守下。你可以询问俘虏为何盯着撤退方向。\n[scene_location: location="${location}"]\n[encounter: phase="resolution" kind="${kind}" severity="3" outcome="success"]\n[choices: "询问俘虏为何盯着撤退方向"]`
+    : `You hold the warehouse door and issue a warning. The prisoner's allies are repelled and withdraw from the quay; the rescue is stopped, and the prisoner remains under guard. You can ask the prisoner why he watches the direction of retreat.\n[scene_location: location="${location}"]\n[encounter: phase="resolution" kind="${kind}" severity="3" outcome="success"]\n[choices: "Ask the prisoner why he watches the direction of retreat"]`)
   assert.deepEqual(resolution.violations, [], `${cartridge.locale}: only visible same-thread resolution may close the rescue`)
   save = applyParsedScene(save, resolution.parsed, cartridge, zh ? '守住仓门并要求撤退' : 'Hold the door and demand a withdrawal', undefined, undefined, directive)
   assert.equal(save.danger.phase, 'calm')
-  assert.match(save.choices[0]?.label ?? '', zh ? /审问.*俘虏/ : /questioning.*prisoner/i)
+  assert.match(save.choices[0]?.label ?? '', zh ? /询问俘虏.*撤退方向/ : /ask the prisoner.*direction of retreat/i)
 
   const restored = JSON.parse(JSON.stringify(save)) as StorySave
   assert.equal(restored.danger.phase, 'calm')

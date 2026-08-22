@@ -142,9 +142,9 @@ for (const locale of ['zh', 'en'] as const) {
   const exactAction = locale === 'zh' ? `前往${collisionA.label}` : `Travel to ${collisionA.label}`
   expect(inferActionDestination(ambiguous, cartridge, exactAction)?.id, collisionA.id, `${locale} exact canonical name wins despite alias collision`)
 
-  const routeOnlyAlias = locale === 'zh' ? '远岸工棚' : 'Far Bank Shed'
+  const routeOnlyAlias = locale === 'zh' ? '远岸工棚' : 'Xylophonic Hypercube'
   const routeOnlySave = { ...origin, map: [...origin.map, { id: `route-only-${locale}`, label: locale === 'zh' ? '远岸' : 'Far Bank', routeHints: [routeOnlyAlias], visited: true }] }
-  const unsupportedLocalChoice = locale === 'zh' ? `在${routeOnlyAlias}雕刻星辉王冠` : `Forge a zephyrite crown at ${routeOnlyAlias}`
+  const unsupportedLocalChoice = locale === 'zh' ? `在${routeOnlyAlias}雕刻星辉王冠` : `Forge a quantum submarine at ${routeOnlyAlias}`
   expect(filterGroundedChoices([{ id: 'unsupported', label: unsupportedLocalChoice }], routeOnlySave, cartridge).length, 0, `${locale} a route alias alone cannot invent an executable local activity`)
   const validRouteChoice = locale === 'zh' ? `前往${routeOnlyAlias}` : `Travel to ${routeOnlyAlias}`
   expect(inferActionDestination(routeOnlySave, cartridge, validRouteChoice)?.id, `route-only-${locale}`, `${locale} the same alias still proves a movement route`)
