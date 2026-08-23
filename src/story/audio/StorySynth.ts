@@ -19,7 +19,7 @@ export const SYNTH_AMBIENT_PROFILE = {
 
 export const RECORDED_SOUND_PROFILE = {
   musicRepeatDelayMs: 30_000,
-  ambienceRepeatDelayMs: 7_000,
+  ambienceReplay: 'once-per-visit',
   maxCueVoices: 2,
   featureCooldownMs: 180_000,
 } as const
@@ -31,6 +31,12 @@ export function resolveRecordedAmbience(theme: StoryAudioTheme, locationId?: str
 export function isRecordedFeatureReady(track: StoryRecordedTrack, active: boolean, lastPlayedAt: number, now = Date.now()): boolean {
   if (track.role !== 'feature' || active) return false
   return now - lastPlayedAt >= (track.cooldownMs ?? RECORDED_SOUND_PROFILE.featureCooldownMs)
+}
+
+/** Music may return after a long rest. Ambience and event sounds are one-shot:
+ * they must never become an audible loop while the player is reading. */
+export function shouldReplayRecordedBed(kind: 'music' | 'ambient'): boolean {
+  return kind === 'music'
 }
 
 function safeTrackGain(track: StoryRecordedTrack | undefined): number {
@@ -105,6 +111,7 @@ export class StorySynth {
   private recordedAmbience: HTMLAudioElement | null = null
   private recordedMusicTrack: StoryRecordedTrack | undefined
   private recordedAmbienceTrack: StoryRecordedTrack | undefined
+  private recordedAmbienceCompletedForVisit = false
   private recordedMusicTimer: number | null = null
   private recordedAmbienceTimer: number | null = null
   private recordedCueVoices = new Set<HTMLAudioElement>()
@@ -131,7 +138,7 @@ export class StorySynth {
     this.tension = clampUnit(tension)
     this.locationId = locationId ?? ''
     this.syncRecordedMusic(theme.recorded?.music)
-    if (locationChanged || !this.recordedAmbience) this.syncRecordedAmbience(resolveRecordedAmbience(theme, locationId))
+    if (locationChanged || !this.recordedAmbience) this.syncRecordedAmbience(resolveRecordedAmbience(theme, locationId), locationChanged)
     if (changed && this.unlocked) {
       this.stopMusic()
       this.stopAmbient()
@@ -302,16 +309,27 @@ export class StorySynth {
     else if (this.unlocked && !track) this.startMusic()
   }
 
-  private syncRecordedAmbience(track: StoryRecordedTrack | undefined): void {
+  private syncRecordedAmbience(track: StoryRecordedTrack | undefined, restartVisit = false): void {
     if (this.recordedAmbienceTrack?.src === track?.src) {
       this.recordedAmbienceTrack = track
+      if (restartVisit && this.recordedAmbience && track) {
+        this.clearRecordedTimer('ambient')
+        this.recordedAmbience.pause()
+        this.recordedAmbience.currentTime = 0
+        this.recordedAmbienceCompletedForVisit = false
+        if (this.unlocked && !this.muted) this.playRecordedBed('ambient')
+      }
       return
     }
     this.clearRecordedTimer('ambient')
     this.recordedAmbience?.pause()
     this.recordedAmbience = track ? this.createRecordedElement(track) : null
     this.recordedAmbienceTrack = track
-    if (this.recordedAmbience) this.recordedAmbience.onended = () => this.scheduleRecordedReplay('ambient')
+    this.recordedAmbienceCompletedForVisit = false
+    if (this.recordedAmbience) this.recordedAmbience.onended = () => {
+      this.recordedAmbienceCompletedForVisit = true
+      this.clearRecordedTimer('ambient')
+    }
     if (this.unlocked && track && !this.muted) this.playRecordedBed('ambient')
     else if (this.unlocked && !track) this.startAmbient()
   }
@@ -319,7 +337,8 @@ export class StorySynth {
   private playRecordedBed(kind: 'music' | 'ambient'): void {
     const element = kind === 'music' ? this.recordedMusic : this.recordedAmbience
     const track = kind === 'music' ? this.recordedMusicTrack : this.recordedAmbienceTrack
-    if (!element || !track || this.muted || document.hidden || (kind === 'music' && this.recordedFeatureVoice)) return
+    if (!element || !track || this.muted || document.hidden || (kind === 'music' && this.recordedFeatureVoice)
+      || (kind === 'ambient' && this.recordedAmbienceCompletedForVisit)) return
     this.clearRecordedTimer(kind)
     this.applyRecordedLevels()
     void element.play()
@@ -336,14 +355,13 @@ export class StorySynth {
   }
 
   private scheduleRecordedReplay(kind: 'music' | 'ambient'): void {
-    if (this.muted || document.hidden || (kind === 'music' && this.recordedFeatureVoice)) return
+    if (!shouldReplayRecordedBed(kind) || this.muted || document.hidden || this.recordedFeatureVoice) return
     this.clearRecordedTimer(kind)
-    const delay = kind === 'music' ? RECORDED_SOUND_PROFILE.musicRepeatDelayMs : RECORDED_SOUND_PROFILE.ambienceRepeatDelayMs
     const timer = window.setTimeout(() => {
       const element = kind === 'music' ? this.recordedMusic : this.recordedAmbience
       if (element) element.currentTime = 0
       this.playRecordedBed(kind)
-    }, delay)
+    }, RECORDED_SOUND_PROFILE.musicRepeatDelayMs)
     if (kind === 'music') this.recordedMusicTimer = timer
     else this.recordedAmbienceTimer = timer
   }
@@ -422,6 +440,7 @@ export class StorySynth {
     this.recordedAmbience = null
     this.recordedMusicTrack = undefined
     this.recordedAmbienceTrack = undefined
+    this.recordedAmbienceCompletedForVisit = false
     this.stopRecordedCueVoices(false)
     this.recordedFeatureLastPlayed.clear()
   }
