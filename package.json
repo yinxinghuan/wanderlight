@@ -37,7 +37,8 @@
     "test:generated-characters": "node --import tsx public-tests/generated-character-persistence.ts",
     "test:danger": "node --import tsx public-tests/danger-director.ts",
     "test:danger-loop": "node --import tsx public-tests/danger-loop.ts",
-    "test:loop-escape": "node --import tsx public-tests/loop-escape.ts"
+    "test:loop-escape": "node --import tsx public-tests/loop-escape.ts",
+    "test:server-turn": "node --import tsx _qa/server-turn-pipeline.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
