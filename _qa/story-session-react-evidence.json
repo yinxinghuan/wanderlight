@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "game": "wanderlight",
+  "capturedAt": "2026-09-04T07:20:00+08:00",
+  "stage": "local-react-canary-passed",
+  "productionDefaultChanged": false,
+  "productionWrites": false,
+  "liveModelCalled": false,
+  "identityMode": "synthetic-loopback-qa-token",
+  "tests": {
+    "browser": "npm run test:story-session-history-browser",
+    "typecheck": "npm run check:story-session"
+  },
+  "verified": [
+    "isolated React writer uses StorySessionJournal rather than the legacy cloud hook",
+    "unknown response remains pending and blocks new actions across reload",
+    "recovery reconciles the committed action exactly once",
+    "restart creates a separate journey and retains the old session",
+    "explicit switch restores the old authoritative head",
+    "synthetic owners and locales have separate directories",
+    "saved-journey rows remain at least 44px",
+    "platform-layout Chinese 390x844 and English 320x568 have no horizontal overflow",
+    "strict UI foundation audit reports no likely functional glyph or broken restart path findings"
+  ],
+  "screenshots": [
+    "_qa/ui/platform-layout-wanderlight-session-history-zh-390x844.png",
+    "_qa/ui/platform-layout-wanderlight-session-history-en-320x568.png"
+  ],
+  "notVerified": [
+    "backend-verifiable AlterU identity",
+    "production Worker or database",
+    "real accounts, devices, model calls or media calls",
+    "server-controlled production cohort or deployment"
+  ]
+}
+

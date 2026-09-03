@@ -131,7 +131,7 @@
 - 正式入口仍使用既有 Aigram 存档与 `game-chat` 适配器；本机 canary 只使用 loopback SQLite、合成 QA 身份和固定生成器故障，不接正式玩家、真实模型或生产写入。
 - 旧存档以稳定 enrollment id 无损注册，客户端在第一次注册/行动请求之前保存原始 envelope；未知响应先按 previous cursor 与 action id 对账，确认未提交后才允许重放完全相同的请求。存储失败、模型故障、陈旧版本、跨 owner 访问和事务故障都不得产生部分写入。
 - 普通 `GET` 只读。持久化修复只接受固定白名单 migration id 与期望 session/ruleset version，服务端从已存 snapshot 运行本作 `normalizeSave()`；浏览器不得上传目标 snapshot，成功只增加 session version，不增加剧情 cursor/event。
-- 同一 owner 的旧旅程保留在服务端，目录最多返回 50 条最小元数据，不包含正文、选择、事件、提示词、媒体 URL 或 owner。restart 创建独立 session，pending enrollment/action 未恢复时禁止切换。当前只完成服务/client 合同，React 历史旅程界面仍未接入。
+- 同一 owner 的旧旅程保留在服务端，目录最多返回 50 条最小元数据，不包含正文、选择、事件、提示词、媒体 URL 或 owner。restart 创建独立 session，pending enrollment/action 未恢复时禁止切换。隔离 React QA 入口在“旅途手册 → 旅记 → 系统”显示“保留的旅程”并允许显式切回；正式旧引擎不提供该能力，因此线上界面不渲染空壳。
 
 ## 4. Controls
 

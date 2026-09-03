@@ -42,7 +42,10 @@
     "test:story-session-client": "node --import tsx _qa/story-session-client.ts",
     "test:story-session-persistence": "node --import tsx _qa/story-session-persistence.ts",
     "test:story-session-directory": "node --import tsx _qa/story-session-directory.ts",
-    "test:story-session-migration": "node --import tsx _qa/story-session-migration.ts"
+    "test:story-session-migration": "node --import tsx _qa/story-session-migration.ts",
+    "test:story-session-history-browser": "node _qa/story-session-history-browser.mjs",
+    "story:ui-lab": "node --import tsx _qa/run-story-session-ui.ts",
+    "check:story-session": "tsc -p tsconfig.story-session.json"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -53,6 +56,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "less": "^4.2.0",
+    "playwright": "^1.62.1",
     "tsx": "^4.23.5",
     "typescript": "^5.6.3",
     "vite": "^5.4.21"
