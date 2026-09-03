@@ -51,7 +51,7 @@ for (const locale of ['zh', 'en'] as const) {
     action: repeatedAction,
     parsed: parseStoryProtocol(zh
       ? `你确认薄弱仓门的门闩已经松动，货箱就在手边。俘虏的同伴仍在门外试图营救。\n[scene_location: location="${location}"]\n[encounter: phase="confrontation" kind="${threat}" severity="3" outcome="active"]\n[choices: "继续检查薄弱仓门"|"${concrete}"]`
-      : `You confirm that the weak warehouse door has a loose latch and cargo is within reach. The prisoner's allies are still outside trying to rescue him.\n[scene_location: location="${location}"]\n[encounter: phase="confrontation" kind="${threat}" severity="3" outcome="active"]\n[choices: "Continue inspecting the weak warehouse door"|"${concrete}"]`, locale),
+      : `You confirm that the weak warehouse door has a loose latch and cargo is within reach. The prisoner's allies are still outside trying to rescue him.\n[scene_location: location="${location}"]\n[encounter: phase="confrontation" kind="${threat}" severity="3" outcome="active"]\n[choices: "Continue inspecting the weak warehouse door"|"Inspect the weak warehouse door again"|"Inspect the weak warehouse door once more"|"${concrete}"]`, locale),
   })
   assert.deepEqual(choiceLabels(repeated), [concrete], `${locale}: an immediate retry-prefixed copy of the completed action is removed`)
   cases += 1

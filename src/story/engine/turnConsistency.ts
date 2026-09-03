@@ -437,6 +437,7 @@ function withoutRetryPrefix(value: string, locale: StoryCartridge['locale']): st
   }
   const words = value.toLocaleLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim()
     .replace(/^(?:(?:continue|again|retry|reattempt|resume|keep|once more)\s+)+/i, '')
+    .replace(/\s+(?:(?:again|once more|carefully)\s*)+$/i, '')
     .split(' ').filter(Boolean)
     .map((word) => word.length > 5 && word.endsWith('ing') ? word.slice(0, -3) : word)
   return words.join('')

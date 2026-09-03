@@ -116,6 +116,8 @@ public-tests/
 
 推荐失败隔离由 `turnConsistency.ts`、`reducer.ts` 和 `useStoryEngine.ts` 共同完成。生成层先删除没有权威进展时对同一物件换动词重试的建议，并拒绝在错误地点/人物/工作状态下复活确定性作者标签；作者回合自身的已审核后续不走语义误杀。两次生成均不可靠时，`applyConsistencyRecovery()` 写入 `consistency-quarantine-v2`，保持权威状态不变，并从提交前选择记录中只删除失败动作、目标包装和旧合成恢复项。连续失败按当前集合继续缩小；集合为空时 `normalizeSave()` 不再补通用按钮。`public-tests/loop-escape.ts` 固定覆盖兄弟保留、严格收缩、零快捷栏重载和语义重复。
 
+- 英文重复动作规范化同时处理 `Retry/Continue ...` 前缀与 `... again/once more` 后缀；与中文“再次/重新……”共用生成选项门禁，并由 `public-tests/recommended-choice-quality.ts` 锁回归。
+
 ## 4. 扩展点
 
 - **修改世界或玩法**：编辑 `src/story/cartridges/wanderlight.ts` 的 director、domain rules 与数值；原有核心路线位于 `wanderlightV1Content.ts` 和 `wanderlightV1Outcomes.ts`，新增地区、人物、抵达入口、重逢和跨区导演规则集中在 `wanderlightWorldExpansion.ts`，地区事件集中在 `wanderlightPresetEvents.ts`。通用判定逻辑放入 `src/story/engine/`，不要藏在提示词里。
