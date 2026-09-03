@@ -5,7 +5,7 @@ import { buildWorldContext, partyContinuityContract } from '../engine/worldConte
 import { dangerDirectiveContract } from '../engine/dangerDirector'
 import { narrativeStyleContract } from '../narrativeStyle'
 
-const endpoint = import.meta.env.VITE_STORY_API_ORIGIN || 'https://uu545921-zfkm-aec62664.westb.seetacloud.com:8443'
+const endpoint = import.meta.env?.VITE_STORY_API_ORIGIN || 'https://uu545921-zfkm-aec62664.westb.seetacloud.com:8443'
 
 function decodeEvent(chunk: string): { event?: string; data?: unknown } | null {
   const lines = chunk.split('\n')

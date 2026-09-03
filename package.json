@@ -38,7 +38,11 @@
     "test:danger": "node --import tsx public-tests/danger-director.ts",
     "test:danger-loop": "node --import tsx public-tests/danger-loop.ts",
     "test:loop-escape": "node --import tsx public-tests/loop-escape.ts",
-    "test:server-turn": "node --import tsx _qa/server-turn-pipeline.ts"
+    "test:server-turn": "node --import tsx _qa/server-turn-pipeline.ts",
+    "test:story-session-client": "node --import tsx _qa/story-session-client.ts",
+    "test:story-session-persistence": "node --import tsx _qa/story-session-persistence.ts",
+    "test:story-session-directory": "node --import tsx _qa/story-session-directory.ts",
+    "test:story-session-migration": "node --import tsx _qa/story-session-migration.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

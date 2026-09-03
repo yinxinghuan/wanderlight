@@ -126,6 +126,13 @@
 
 推荐动作失败时必须保持地点、数值、物品、人物和已发生事件不变，并把失败动作从当前快捷选项隔离；其余仍有依据的同级选项按原顺序保留。连续失败必须让选项集合严格缩小，不能改写措辞后回到同一固定点。没有可信同级选项时快捷栏允许为空，由自由输入继续，不生成“查看能做的事 / 放弃原计划”等通用菜单。危险线程继续使用只绑定当前威胁的确定性应对选项。作者预写选项只在其声明的地点、人物和工作状态成立时可由生成层再次推荐；作者回合自身已经过审核的后续不做语义重复误杀。
 
+### Story Session 本机 canary
+
+- 正式入口仍使用既有 Aigram 存档与 `game-chat` 适配器；本机 canary 只使用 loopback SQLite、合成 QA 身份和固定生成器故障，不接正式玩家、真实模型或生产写入。
+- 旧存档以稳定 enrollment id 无损注册，客户端在第一次注册/行动请求之前保存原始 envelope；未知响应先按 previous cursor 与 action id 对账，确认未提交后才允许重放完全相同的请求。存储失败、模型故障、陈旧版本、跨 owner 访问和事务故障都不得产生部分写入。
+- 普通 `GET` 只读。持久化修复只接受固定白名单 migration id 与期望 session/ruleset version，服务端从已存 snapshot 运行本作 `normalizeSave()`；浏览器不得上传目标 snapshot，成功只增加 session version，不增加剧情 cursor/event。
+- 同一 owner 的旧旅程保留在服务端，目录最多返回 50 条最小元数据，不包含正文、选择、事件、提示词、媒体 URL 或 owner。restart 创建独立 session，pending enrollment/action 未恢复时禁止切换。当前只完成服务/client 合同，React 历史旅程界面仍未接入。
+
 ## 4. Controls
 
 - 叙事正文纵向滚动；选择卡和自由输入使用 `onClick`/提交动作，不在滚动列表里使用 `onPointerDown`。

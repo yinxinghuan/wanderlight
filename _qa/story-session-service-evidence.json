@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "game": "wanderlight",
+  "capturedAt": "2026-09-04T07:00:00+08:00",
+  "stage": "local-service-canary-passed",
+  "productionDefaultChanged": false,
+  "productionWrites": false,
+  "liveModelCalled": false,
+  "reactMounted": false,
+  "identityMode": "synthetic-loopback-qa-token",
+  "tests": [
+    "npm run test:story-session-client",
+    "npm run test:story-session-persistence",
+    "npm run test:story-session-directory",
+    "npm run test:story-session-migration"
+  ],
+  "verified": [
+    "old-save enrollment and pending action are persisted before network writes",
+    "unknown outcomes reconcile by cursor and action id with one commit",
+    "two Node processes share durable owner-scoped SQLite state",
+    "transaction failure rolls back snapshot, cache, event and audit",
+    "lost response plus process termination recovers after database reopen",
+    "owner-scoped directory exposes minimal metadata only",
+    "restart retains old sessions and explicit switch is fail closed",
+    "normal GET is read-only and explicit repair rejects client target snapshots",
+    "two authorities commit one migration and hash-only replay survives restart"
+  ],
+  "notVerified": [
+    "backend-verifiable AlterU identity",
+    "React checkpoint or saved-journey UI",
+    "real accounts, devices, model calls or media calls",
+    "production database migration, Worker writes, cohort or deployment"
+  ]
+}
+
