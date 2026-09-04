@@ -5,10 +5,11 @@ import { createInitialSave } from '../engine/reducer'
 import { t } from '../i18n'
 import { StorySessionRequestError, type StorySessionHead } from './storySessionClient'
 import { StorySessionJournal } from './storySessionJournal'
+import { useStorySessionMedia } from './useStorySessionMedia'
 
 /** Isolated local UI canary. It never calls the legacy cloud writer or a live model. */
-export function useStorySessionEngine(options: { cartridge: StoryCartridge; journal: StorySessionJournal; scope: string; initialSave: StorySave }): StoryEngineView & { sessionId?: string; version?: number } {
-  const { cartridge, journal, scope, initialSave } = options
+export function useStorySessionEngine(options: { cartridge: StoryCartridge; journal: StorySessionJournal; scope: string; initialSave: StorySave; imageIdentity?: { ready: boolean; refUrl?: string } }): StoryEngineView & { sessionId?: string; version?: number; applyExternalMutation(mutationId: string, mutation: unknown): Promise<void> } {
+  const { cartridge, journal, scope, initialSave, imageIdentity = { ready: true } } = options
   const [head, setHead] = useState<StorySessionHead>()
   const headRef = useRef<StorySessionHead>()
   const [entered, setEntered] = useState(false)
@@ -42,12 +43,13 @@ export function useStorySessionEngine(options: { cartridge: StoryCartridge; jour
     } finally { running.current = false; if (mounted.current) { setBusy(false); setPendingAction('') } }
   }, [adopt, cartridge, initialSave, journal, scope])
   useEffect(() => { mounted.current = true; void run('open'); return () => { mounted.current = false } }, [run])
+  const media = useStorySessionMedia({ cartridge, head, journal, identity: imageIdentity, adopt, enabled: entered })
   const enter = useCallback(() => {
     if (!headRef.current || running.current || blocked) return
     try { alteruLocalStorage.setItem(entryKey(headRef.current.session_id), '1'); setEntered(true) }
     catch { setError(t(cartridge.locale, 'sessionRecoveryNeeded')); setBlocked(true) }
   }, [blocked, cartridge.locale, entryKey])
-  const snapshot = head?.snapshot ?? initialSave
+  const snapshot = media.save ?? head?.snapshot ?? initialSave
   const save: StorySave = { ...snapshot, entered, blocks: snapshot.blocks.map(block => block.kind === 'image' && block.data?.status !== 'ready' ? { ...block, data: { ...block.data, status: 'idle' } } : block) }
   const listSessions = useCallback(() => journal.listSessions(), [journal])
   const switchSession = useCallback(async (sessionId: string) => {
@@ -64,13 +66,20 @@ export function useStorySessionEngine(options: { cartridge: StoryCartridge; jour
       throw cause
     } finally { running.current = false; if (mounted.current) setBusy(false) }
   }, [adopt, blocked, cartridge.locale, journal, scope])
+  const applyExternalMutation = useCallback(async (mutationId: string, mutation: unknown) => {
+    if (running.current || blocked || !headRef.current) throw new Error('SESSION_BUSY')
+    running.current = true; setBusy(true); setError('')
+    try { const next = await journal.mutate(mutationId, mutation, headRef.current); if (mounted.current) adopt(next) }
+    finally { running.current = false; if (mounted.current) setBusy(false) }
+  }, [adopt, blocked, journal])
+
   return {
     save, mode: 'aigram', setMode: () => {}, fixedSource: true, fixedLocale: true, preservesSessionOnRestart: true,
     busy, actionBlocked: blocked, loaded: Boolean(head), error, pendingAction,
     progress: busy ? { label: t(cartridge.locale, 'restoring'), percent: 20 } : null, canRetry: blocked && !busy,
     enter, act: async action => { if (!blocked && !running.current && entered) await run('act', action) }, retryAction: () => { void run('open') },
-    restartWorld: () => { if (!blocked && !running.current) void run('restart') }, useAigramFallback: () => {}, retryImage: () => {}, prepareInventoryImages: () => {}, clear: async () => {},
-    listSessions, switchSession, sessionId: head?.session_id, version: head?.version,
+    restartWorld: () => { if (!blocked && !running.current) void run('restart') }, useAigramFallback: () => {}, retryImage: media.retry, prepareInventoryImages: media.prepareInventory, clear: async () => {},
+    listSessions, switchSession, sessionId: head?.session_id, version: head?.version, applyExternalMutation,
   }
 }
 

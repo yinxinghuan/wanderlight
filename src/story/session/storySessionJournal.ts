@@ -6,7 +6,7 @@ interface Checkpoint { schema: 1; scope: string; enrollment?: { id: string; init
 
 export class StorySessionJournal {
   private busy = false
-  constructor(private readonly client: StorySessionClient, private readonly store: StorySessionJournalStore, private readonly scope: string) {
+  constructor(private readonly client: StorySessionClient, private readonly store: StorySessionJournalStore, private readonly scope: string, private readonly resumeLatest = false) {
     if (!scope) throw new Error('JOURNAL_SCOPE_REQUIRED')
   }
   private load(): Checkpoint | undefined {
@@ -45,6 +45,15 @@ export class StorySessionJournal {
   open(initialSave?: StorySave): Promise<StorySessionHead> { return this.exclusive(() => this.resume(initialSave)) }
   private async resume(initialSave?: StorySave): Promise<StorySessionHead> {
     let checkpoint = this.load()
+    if (!checkpoint && this.resumeLatest) {
+      const directory = await this.client.list(1)
+      const latest = directory.sessions[0]
+      if (latest) {
+        const head = await this.client.read(latest.session_id)
+        checkpoint = { schema: 1, scope: this.scope, head }
+        this.save(checkpoint)
+      }
+    }
     if (!checkpoint) {
       if (!initialSave) throw new Error('INITIAL_SAVE_REQUIRED')
       checkpoint = { schema: 1, scope: this.scope, enrollment: { id: createStoryActionId(), initialSave: structuredClone(initialSave) } }
@@ -96,6 +105,27 @@ export class StorySessionJournal {
       return this.recover(next)
     })
   }
+  attachMedia(sessionId: string, entityId: string, requestId: string, kind: 'block' | 'inventory', url: string): Promise<StorySessionHead> {
+    return this.exclusive(async () => {
+      const checkpoint = this.load()
+      if (!checkpoint?.head || checkpoint.head.session_id !== sessionId) throw new Error('SESSION_NOT_OPEN')
+      if (checkpoint.pending || ('pendingEnding' in checkpoint && checkpoint.pendingEnding)) throw new Error('SESSION_BUSY')
+      const head = await this.client.attachMedia(sessionId, entityId, requestId, kind, url)
+      this.save({ schema: 1, scope: this.scope, head })
+      return head
+    })
+  }
+  mutate(mutationId: string, mutation: unknown, displayed?: Pick<StorySessionHead, 'session_id' | 'version'>): Promise<StorySessionHead> {
+    return this.exclusive(async () => {
+      const checkpoint = this.load()
+      if (!checkpoint?.head || checkpoint.pending || ('pendingEnding' in checkpoint && checkpoint.pendingEnding)) throw new Error('SESSION_BUSY')
+      if (displayed && (displayed.session_id !== checkpoint.head.session_id || displayed.version !== checkpoint.head.version)) throw new StorySessionRequestError(409, 'VERSION_CONFLICT')
+      const head = await this.client.mutate(checkpoint.head, mutationId, mutation)
+      this.save({ schema: 1, scope: this.scope, head })
+      return head
+    })
+  }
+
 }
 
 

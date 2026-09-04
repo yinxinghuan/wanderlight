@@ -56,7 +56,7 @@ public-tests/
 
 2026-09-04 本机 Story Session service/client canary 新增 `server/storySessionLab.ts`、`src/story/session/storySessionClient.ts` 与 `storySessionJournal.ts`。Lab 只绑定 loopback，以合成 bearer→owner 映射和 WAL SQLite 验证 enrollment/action 的请求指纹幂等、短事务原子提交与磁盘恢复；浏览器 journal 在首次网络请求前保存 enrollment 或 pending envelope，未知结果先读 cursor/action id 再决定是否重放。同一数据库的两个 Node 进程验证同版本竞争、相同 action 去重、事务故障全回滚、提交后丢响应并终止进程后的重启恢复。owner-scoped 目录只回 session/ruleset/version/cursor/locale/scene/时间，restart 保留旧旅程，switch 在 unresolved enrollment/action 时 fail closed。
 
-存量修复固定为 `wanderlight-save-v10-repair-2026-09-04`。普通 GET 保持只读；服务端从已存 snapshot 调用本作 `normalizeSave()`，拒绝客户端目标 snapshot，成功只增加 session version，不增加剧情 cursor/event。migration audit 只保存请求与修复前后哈希，双 authority 竞争只提交一次，相同 payload 在后续行动或服务重启后仍幂等。`_qa/story-session-client.ts`、`story-session-persistence.ts`、`story-session-directory.ts` 与 `story-session-migration.ts` 使用固定故障和合成 owner 覆盖这些合同。正式 `StoryShell/useStoryEngine`、Aigram 云存档、媒体流程、Worker、生产默认与部署均未改变；正式写入仍等待后端可验证身份、数据库迁移作业、备份/监控/回滚和 server-controlled cohort。
+存量修复固定为 `wanderlight-save-v10-repair-2026-09-04`。普通 GET 保持只读；服务端从已存 snapshot 调用本作 `normalizeSave()`，拒绝客户端目标 snapshot，成功只增加 session version，不增加剧情 cursor/event。migration audit 只保存请求与修复前后哈希，双 authority 竞争只提交一次，相同 payload 在后续行动或服务重启后仍幂等。`_qa/story-session-client.ts`、`story-session-persistence.ts`、`story-session-directory.ts` 与 `story-session-migration.ts` 使用固定故障和合成 owner 覆盖这些合同。该段记录的是本机实验阶段；2026-09-04 的生产切换和当前身份限制见文末“Story Session 生产迁移”。
 
 `src/story/session/useStorySessionEngine.ts` 是唯一使用 journal 的隔离 React writer；`_qa/story-session.html` 不在正式 `index.html` 导入图中。QA writer 以 Web Lock 协调同 scope 页面，未知响应保留 pending、禁用新行动，并在刷新后先 GET 对账。`StoryGameView` 只在 engine 显式提供 `listSessions/switchSession` 时渲染 owner-scoped 历史旅程；正式 `useStoryEngine` 不提供这些方法，所以生产写入路径与默认画面不变。`_qa/story-session-history-browser.mjs` 使用固定生成器夹具覆盖服务端已提交后丢响应、API 离线、刷新恢复只提交一次、restart 保留旧旅程、显式切回、合成 owner/语言隔离，以及中文 390×844 与英文 320×568 的触控和无溢出证据。该证据仍只是 loopback SQLite 与合成身份，不代表正式 Worker、生产迁移、真实账号或 cohort 已完成。
 
@@ -144,3 +144,9 @@ public-tests/
 ## 2026-08-23 一次性环境与事件音
 
 环境声在每次进入一个地点时只播一遍，播完保持安静；只有真实离开并重新进入才获得一次新的播放。短事件音按已提交事件只播一次，静音切换、页面恢复、重渲染、读档和重连均不补播。`_qa/one-shot-audio.ts` 固定验证同地点不复播与换地点后只新增一次播放。
+
+## Story Session 生产迁移（2026-09-04）
+
+默认生产入口已从浏览器单写者切换到同 UUID Worker 的 Story Session 权威运行时。剧情快照、版本、事件、enrollment/action/ending 幂等结果与媒体 URL overlay 保存在 Durable Object SQLite；客户端在提交前把待处理 envelope 写入本地 journal，未知网络结果先读取权威事件再恢复。`?story_runtime=legacy` 与历史 `chat_id` 入口保留旧引擎回滚。
+
+当前缺少平台可验证的用户身份，因此使用 256-bit 随机匿名能力令牌做 owner 隔离。令牌作为旧 `StoryArchive` 的附加字段通过现有 AIGram 游戏存档同步；它能实现同令牌跨设备恢复，但不能证明真实 AlterU 用户，也不能处理令牌被复制后的冒用。旧 `worlds` 存档保留且不被 enrollment 删除。媒体仍由现有平台服务生成，稳定 request id 防止未知结果重复计费，成功 URL 回写 Story Session 且不增加剧情版本。

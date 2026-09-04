@@ -12,6 +12,8 @@ import { decodeChoiceRecord, resolveNumberedChoiceInput } from './engine/choiceI
 import { latestReadingAnchorId } from './engine/readingAnchor'
 import { getMediaImageTask } from '../shared/runtime/media'
 import type { StorySessionDirectory } from './session/storySessionClient'
+import { useStorySessionBootstrap } from './session/useStorySessionBootstrap'
+import { useStorySessionEngine } from './session/useStorySessionEngine'
 
 export type StoryEngineView = ReturnType<typeof useStoryEngine> & {
   actionBlocked?: boolean
@@ -673,7 +675,7 @@ export function StoryGameView({ cartridge, engine, player, onSelect, onLocaleCha
   </main>
 }
 
-function Game({ cartridge, mode, chatId, onSelect, onLocaleChange }: { cartridge: StoryCartridge; mode: StoryMode; chatId?: string; onSelect: (id: string) => void; onLocaleChange: (locale: Locale) => void }) {
+function LegacyGame({ cartridge, mode, chatId, onSelect, onLocaleChange }: { cartridge: StoryCartridge; mode: StoryMode; chatId?: string; onSelect: (id: string) => void; onLocaleChange: (locale: Locale) => void }) {
   const player = usePlayerProfile()
   const engineCartridge = useMemo<StoryCartridge>(() => {
     const authorityFirstCanary = new URLSearchParams(window.location.search).get('authority_first') === '1'
@@ -684,6 +686,18 @@ function Game({ cartridge, mode, chatId, onSelect, onLocaleChange }: { cartridge
   return <StoryGameView cartridge={cartridge} engine={engine} player={player} onSelect={onSelect} onLocaleChange={onLocaleChange} />
 }
 
+function SessionBoundGame({ player, bootstrap, ...props }: { cartridge: StoryCartridge; player: PlayerProfile; bootstrap: NonNullable<ReturnType<typeof useStorySessionBootstrap>>; onSelect: (id: string) => void; onLocaleChange: (locale: Locale) => void }) {
+  const imageIdentity = { ready: player.loaded, refUrl: player.imageRefUrl }
+  const engine = useStorySessionEngine({ cartridge: props.cartridge, ...bootstrap, imageIdentity })
+  return <StoryGameView cartridge={props.cartridge} engine={engine} player={player} onSelect={props.onSelect} onLocaleChange={props.onLocaleChange} />
+}
+
+function SessionGame(props: { cartridge: StoryCartridge; onSelect: (id: string) => void; onLocaleChange: (locale: Locale) => void }) {
+  const player = usePlayerProfile()
+  const bootstrap = useStorySessionBootstrap('wanderlight', props.cartridge)
+  if (!bootstrap) return <div className="st-loading" style={setCssTheme(props.cartridge)}><i /><span>{t(props.cartridge.locale, 'restoring')}</span></div>
+  return <SessionBoundGame key={bootstrap.scope} {...props} player={player} bootstrap={bootstrap} />
+}
 export default function StoryShell() {
   const initial = useInitialCartridge()
   const [cartridgeId, setCartridgeId] = useState(initial ?? DEFAULT_CARTRIDGE_ID)
@@ -692,11 +706,14 @@ export default function StoryShell() {
   const params = new URLSearchParams(window.location.search)
   const chatId = params.get('chat_id') || undefined
   const mode: StoryMode = chatId ? 'remote' : params.get('story_mode') === 'demo' ? 'demo' : 'aigram'
+  const useLegacyRuntime = Boolean(chatId) || mode === 'demo' || params.get('story_runtime') === 'legacy'
   useEffect(() => { document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en' }, [locale])
   const select = (id: string) => {
     const url = new URL(window.location.href); url.searchParams.set('cartridge', id); url.searchParams.delete('chat_id'); window.history.replaceState({}, '', url)
     setCartridgeId(id)
   }
   const changeLocale = (next: Locale) => { rememberLocale(next); setLocale(next) }
-  return <Game key={cartridge.id} cartridge={cartridge} mode={mode} chatId={chatId} onSelect={select} onLocaleChange={changeLocale} />
+  return useLegacyRuntime
+    ? <LegacyGame key={`legacy:${cartridge.id}`} cartridge={cartridge} mode={mode} chatId={chatId} onSelect={select} onLocaleChange={changeLocale} />
+    : <SessionGame key={`session:${cartridge.id}`} cartridge={cartridge} onSelect={select} onLocaleChange={changeLocale} />
 }

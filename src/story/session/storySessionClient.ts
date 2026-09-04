@@ -185,6 +185,20 @@ export class StorySessionClient {
       return checkedHead(await this.transport.request(path, { method: 'POST', body }), pending.session_id)
     }
   }
+  async attachMedia(sessionId: string, entityId: string, requestId: string, kind: 'block' | 'inventory', url: string) {
+    return checkedHead(await this.transport.request(
+      `/api/story/sessions/${encodeURIComponent(sessionId)}/media/${encodeURIComponent(entityId)}`,
+      { method: 'POST', body: JSON.stringify({ request_id: requestId, kind, url }) },
+    ), sessionId)
+  }
+
+  async mutate(head: Pick<StorySessionHead, 'session_id' | 'version' | 'ruleset_version'>, mutationId: string, mutation: unknown) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(mutationId)) throw new Error('INVALID_MUTATION_REQUEST')
+    return checkedHead(await this.transport.request(`/api/story/sessions/${encodeURIComponent(head.session_id)}/mutations`, {
+      method: 'POST', body: JSON.stringify({ mutation_id: mutationId, expected_version: head.version, ruleset_version: head.ruleset_version, mutation }),
+    }), head.session_id)
+  }
+
 }
 
 

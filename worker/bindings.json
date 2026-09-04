@@ -1,0 +1,15 @@
+{
+  "bindings": [
+    {
+      "type": "durable_object_namespace",
+      "name": "STORY_SESSIONS",
+      "class_name": "StorySessionAuthority"
+    }
+  ],
+  "migrations": {
+    "new_tag": "story-session-v1",
+    "new_sqlite_classes": [
+      "StorySessionAuthority"
+    ]
+  }
+}

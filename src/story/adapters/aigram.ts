@@ -89,7 +89,7 @@ session_end is a resumable chapter note, not a fixed turn limit. Do not use it m
 
 async function generateTurn(action: string, context: AdapterContext): Promise<AdapterResult> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 60000)
+  const timeout = globalThis.setTimeout(() => controller.abort(), 60000)
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -111,7 +111,7 @@ async function generateTurn(action: string, context: AdapterContext): Promise<Ad
     if (!content) throw new Error('empty response')
     return { content, imagePrompt: extractSceneImagePrompt(content), imageSubject: extractSceneImageSubject(content), imageCharacterId: extractSceneImageCharacterId(content) }
   } finally {
-    window.clearTimeout(timeout)
+    globalThis.clearTimeout(timeout)
   }
 }
 
